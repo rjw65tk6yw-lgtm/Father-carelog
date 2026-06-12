@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>아버지 케어로그 V1 수정본</title>
+<title>아버지 케어로그 V1 수정본 2</title>
 <style>
 :root{--bg:#f6f7fb;--card:#fff;--text:#111827;--muted:#6b7280;--line:#e5e7eb;--primary:#2563eb;--danger:#dc2626;--warn:#d97706;--chip:#eef2ff}
 *{box-sizing:border-box}
@@ -35,7 +35,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 </head>
 <body>
 <header>
-<h1>아버지 케어로그 V1 수정본</h1>
+<h1>아버지 케어로그 V1 수정본 2</h1>
 <div class="sub">저장하면 바로 기록·요약 탭에 표시됩니다. 오늘 날짜는 아이폰 현지 날짜 기준으로 계산합니다.</div>
 </header>
 
@@ -163,6 +163,34 @@ function todayRows(){const t=localDateString();return load().filter(r=>dateKey(r
 function sum(rows,field){return rows.reduce((a,r)=>a+(Number.isFinite(r[field])?r[field]:0),0)}
 function minVal(rows,field){const a=rows.map(r=>r[field]).filter(v=>Number.isFinite(v));return a.length?Math.min(...a):null}
 function maxVal(rows,field){const a=rows.map(r=>r[field]).filter(v=>Number.isFinite(v));return a.length?Math.max(...a):null}
+function bpRows(rows){return rows.filter(r=>Number.isFinite(r.sbp)||Number.isFinite(r.dbp))}
+function formatBP(r){if(!r)return "-";return `${r.sbp??"?"}/${r.dbp??"?"}`}
+function minBP(rows){
+  const a=bpRows(rows);
+  if(!a.length)return null;
+  return a.reduce((best,r)=>{
+    if(!best)return r;
+    const bs=Number.isFinite(best.sbp)?best.sbp:9999;
+    const rs=Number.isFinite(r.sbp)?r.sbp:9999;
+    if(rs!==bs)return rs<bs?r:best;
+    const bd=Number.isFinite(best.dbp)?best.dbp:9999;
+    const rd=Number.isFinite(r.dbp)?r.dbp:9999;
+    return rd<bd?r:best;
+  },null);
+}
+function maxBP(rows){
+  const a=bpRows(rows);
+  if(!a.length)return null;
+  return a.reduce((best,r)=>{
+    if(!best)return r;
+    const bs=Number.isFinite(best.sbp)?best.sbp:-1;
+    const rs=Number.isFinite(r.sbp)?r.sbp:-1;
+    if(rs!==bs)return rs>bs?r:best;
+    const bd=Number.isFinite(best.dbp)?best.dbp:-1;
+    const rd=Number.isFinite(r.dbp)?r.dbp:-1;
+    return rd>bd?r:best;
+  },null);
+}
 
 function collectEntry(){
   return{
@@ -266,7 +294,7 @@ function makeTodaySummary(rows){
     `대변 총량: ${sum(rows,"stool")}`,
     `석션: ${suction}회 / 네뷸: ${neb}회 / 토닥이: ${pat}회 / 구토: ${vomit}회`,
     `SpO₂: ${minVal(rows,"spo2")??"-"}~${maxVal(rows,"spo2")??"-"}%`,
-    `수축기혈압 최저: ${minVal(rows,"sbp")??"-"}`,
+    `혈압: 최저 ${formatBP(minBP(rows))} / 최고 ${formatBP(maxBP(rows))}`,
     `체온 최고: ${maxVal(rows,"temp")??"-"}℃`,
     "",
     "[주의 표시]",
@@ -287,6 +315,8 @@ function renderRecords(){
     <span class="pill">석션 ${today.filter(r=>r.type==="석션").length}회</span>
     <span class="pill">네뷸 ${today.filter(r=>r.type==="네뷸").length}회</span>
     <span class="pill">토닥이 ${today.filter(r=>r.type==="토닥이").length}회</span>
+    <span class="pill">BP 최저 ${formatBP(minBP(today))}</span>
+    <span class="pill">BP 최고 ${formatBP(maxBP(today))}</span>
   `:`<div class="warnbox">오늘 저장된 기록이 없습니다. 아래 “전체 저장 기록”에는 보일 수 있습니다.</div>`;
   document.getElementById("summaryBox").textContent=makeTodaySummary(today);
   document.getElementById("todayList").innerHTML=today.map(entryHtml).join("");
@@ -327,7 +357,7 @@ function download(filename,text,type){
 }
 
 function exportJSON(){
-  const payload={app:"아버지 케어로그 V1 수정본",version:"v1-simple-fixed",createdAt:new Date().toISOString(),records:load()};
+  const payload={app:"아버지 케어로그 V1 수정본 2",version:"v1-simple-fixed-2",createdAt:new Date().toISOString(),records:load()};
   download(`아버지_케어로그_백업_${localDateString()}.json`,JSON.stringify(payload,null,2),"application/json;charset=utf-8");
 }
 
