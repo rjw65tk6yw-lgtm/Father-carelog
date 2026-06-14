@@ -92,7 +92,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div class="card">
 <h2>로그 붙여넣기</h2>
 <div class="note">
-평소 쓰던 아버지 간병 로그를 그대로 붙여넣으면 줄 단위로 기록을 나눠 저장합니다.
+평소 쓰던 아버지 간병 로그를 그대로 붙여넣으면 줄 단위로 기록을 나눠 저장합니다. 날짜가 2일 이상 섞여 있으면 날짜별로 나눠 저장합니다.
 시간, 혈압, SpO₂, HR, 체온, 식사량, 물, 소변, 대변, 위잔류량, HOB 등은 가능한 만큼 자동 추출하고, 원문은 메모에 남깁니다.
 </div>
 <label>붙여넣기 로그</label>
@@ -363,6 +363,7 @@ function extractNumber(pattern, text){
   return Number.isFinite(n) ? n : null;
 }
 
+
 function parseOneLogLine(line, baseDate){
   const original = line.trim();
   let dt = nowLocalInputValue();
@@ -403,13 +404,23 @@ function parseOneLogLine(line, baseDate){
   const residualMatch = original.match(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,8}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)?/i);
   if(residualMatch) residual = Number(residualMatch[1].replace(",", "."));
 
+  // 중요 수정:
+  // 1) 소변은 소변 항목에만 기록
+  // 2) 대변은 '대변' 또는 '변' 단독 표현만 기록
+  // 3) '소변' 안의 '변'을 대변으로 오인하지 않음
   let urine = null;
-  const urineMatch = original.match(/소변[^\d]{0,8}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
+  const urineMatch = original.match(/소변[^\d]{0,10}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
   if(urineMatch) urine = Number(urineMatch[1].replace(",", "."));
 
   let stool = null;
-  const stoolMatch = original.match(/(?:대변|변)[^\d]{0,8}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
-  if(stoolMatch) stool = Number(stoolMatch[1].replace(",", "."));
+  const stoolMatch1 = original.match(/대변[^\d]{0,10}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
+  if(stoolMatch1){
+    stool = Number(stoolMatch1[1].replace(",", "."));
+  } else {
+    // '변 50g'처럼 쓰는 경우만 허용. '소변 50g'은 제외.
+    const stoolMatch2 = original.match(/(?:^|[^소대])변[^\d]{0,10}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
+    if(stoolMatch2) stool = Number(stoolMatch2[1].replace(",", "."));
+  }
 
   const hob = extractNumber(/HOB\s*[:=]?\s*(\d{1,2})/i, original);
 
@@ -441,14 +452,48 @@ function parseOneLogLine(line, baseDate){
   };
 }
 
+function lineLooksLikeDateHeader(line){
+  const hasDate = /(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/.test(line);
+  const hasTime = /(?:^|\s|[,\[])(\d{1,2})[:시](\d{2})?/.test(line);
+  if(!hasDate || hasTime) return false;
+
+  // 날짜 제목/구분선은 기록으로 저장하지 않고, 이후 줄의 날짜 기준으로만 사용
+  if(/일차|월요일|화요일|수요일|목요일|금요일|토요일|일요일|\([월화수목금토일]\)|[-—–]/.test(line)) return true;
+  if(line.replace(/\s/g,"").length <= 25) return true;
+  return false;
+}
+
+function parseDateFromText(text, fallbackDate){
+  const m = text.match(/(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/);
+  if(!m) return fallbackDate || localDateString();
+  return `${m[1]}-${pad(Number(m[2]))}-${pad(Number(m[3]))}`;
+}
+
 function parsePastedLog(){
   const text = document.getElementById("pasteLog").value.trim();
   if(!text) return [];
-  let baseDate = localDateString();
-  const dateMatch = text.match(/(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/);
-  if(dateMatch) baseDate = `${dateMatch[1]}-${pad(Number(dateMatch[2]))}-${pad(Number(dateMatch[3]))}`;
-  return text.split(/\n+/).map(s=>s.trim()).filter(Boolean).map(line=>parseOneLogLine(line, baseDate));
+
+  let currentDate = localDateString();
+  const firstDate = text.match(/(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/);
+  if(firstDate) currentDate = `${firstDate[1]}-${pad(Number(firstDate[2]))}-${pad(Number(firstDate[3]))}`;
+
+  const rows = [];
+  const lines = text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+
+  for(const line of lines){
+    const lineDate = parseDateFromText(line, null);
+    if(lineDate) currentDate = lineDate;
+
+    if(lineLooksLikeDateHeader(line)){
+      continue;
+    }
+
+    rows.push(parseOneLogLine(line, currentDate));
+  }
+
+  return rows;
 }
+
 
 function previewPastedLog(){
   const rows = parsePastedLog();
