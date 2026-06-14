@@ -68,7 +68,8 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div><label>기록 시각</label><input id="dt" type="datetime-local"></div>
 <div><label>기록 종류</label><select id="type">
 <option>활력징후</option><option>식사/경관식</option><option>위잔류량</option><option>구토</option>
-<option>석션</option><option>네뷸</option><option>토닥이</option><option>체위변경</option>
+<option>석션</option>
+<option>구강청소</option><option>네뷸</option><option>토닥이</option><option>체위변경</option>
 <option>수동적 ROM</option>
 <option>피부/욕창</option><option>대소변</option><option>투석</option><option>약</option>
 <option>간호사/병원 메모</option><option>특이사항</option>
@@ -118,7 +119,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div class="card" id="pasteLogCard">
   <h2>로그 붙여넣기</h2>
   <div class="note">
-    네가 평소 쓰는 형식 그대로 붙여넣으면 됩니다. 날짜 헤더와 ㅇ시간 기록을 기준으로 나눠 저장합니다. 이미 저장된 같은 날짜·시간·종류·메모 기록은 중복으로 보고 자동으로 건너뜁니다.
+    네가 평소 쓰는 형식 그대로 붙여넣으면 됩니다. 날짜 헤더와 ㅇ시간 기록을 기준으로 나눠 저장합니다. 이미 저장된 같은 날짜·시간·종류·핵심수치 기록은 중복으로 보고 자동으로 건너뜁니다. 네뷸·토닥이·석션·구강청소가 한 줄에 있으면 각각 분리해 카운트합니다.
     예: <b>2026.6/14 일 320일차</b>, <b>2026.6/13 토 319일차</b>
   </div>
   <label>붙여넣기 로그</label>
@@ -329,13 +330,13 @@ function entryHtml(r){
 }
 function makeTodaySummary(rows){
   if(!rows.length)return "오늘 저장된 기록이 없습니다.";
-  const suction=rows.filter(r=>r.type==="석션").length,neb=rows.filter(r=>r.type==="네뷸").length,pat=rows.filter(r=>r.type==="토닥이").length,rom=rows.filter(r=>r.type==="수동적 ROM").length,vomit=rows.filter(r=>r.type==="구토").length;
+  const suction=rows.filter(r=>r.type==="석션").length,neb=rows.filter(r=>r.type==="네뷸").length,pat=rows.filter(r=>r.type==="토닥이").length,rom=rows.filter(r=>r.type==="수동적 ROM").length,oral=rows.filter(r=>r.type==="구강청소").length,vomit=rows.filter(r=>r.type==="구토").length;
   const warnings=rows.flatMap(r=>warningItems(r).map(x=>`- ${formatTime(r.dt)} ${x[1]} (${r.authorName||"-"})`));
   const memos=rows.filter(r=>r.memo).slice(-10).map(r=>`- ${formatTime(r.dt)} [${r.type}/${r.authorName||"-"}] ${r.memo}`);
   return [`[${localDateString()} 아버지 케어 요약]`,"",
     `총 기록: ${rows.length}개`,`식사/경관식 총량: ${sum(rows,"feed")}mL`,`물 총량: ${sum(rows,"water")}mL`,
     `소변 총량: ${sum(rows,"urine")}`,`대변 총량: ${sum(rows,"stool")}`,
-    `석션: ${suction}회 / 네뷸: ${neb}회 / 토닥이: ${pat}회 / 수동적 ROM: ${rom}회 / 구토: ${vomit}회`,
+    `석션: ${suction}회 / 네뷸: ${neb}회 / 토닥이: ${pat}회 / 수동적 ROM: ${rom}회 / 구강청소: ${oral}회 / 구토: ${vomit}회`,
     `혈압: ${bpHighLowText(rows)}`,`SpO₂: ${minVal(rows,"spo2")??"-"}~${maxVal(rows,"spo2")??"-"}%`,`체온 최고: ${maxVal(rows,"temp")??"-"}℃`,"",
     "[주의 표시]",warnings.length?warnings.join("\n"):"- 없음","",
     "[주요 메모]",memos.length?memos.join("\n"):"- 없음"].join("\n");
@@ -345,7 +346,7 @@ function renderRecords(){
   const all=[...allRows].sort((a,b)=>(b.dt||"").localeCompare(a.dt||""));
   document.getElementById("todayStats").innerHTML=today.length?`
     <span class="pill">오늘 ${today.length}개</span><span class="pill">식사 ${sum(today,"feed")}mL</span><span class="pill">물 ${sum(today,"water")}mL</span>
-    <span class="pill">석션 ${today.filter(r=>r.type==="석션").length}회</span><span class="pill">네뷸 ${today.filter(r=>r.type==="네뷸").length}회</span><span class="pill">토닥이 ${today.filter(r=>r.type==="토닥이").length}회</span><span class="pill">수동적 ROM ${today.filter(r=>r.type==="수동적 ROM").length}회</span>
+    <span class="pill">석션 ${today.filter(r=>r.type==="석션").length}회</span><span class="pill">구강청소 ${today.filter(r=>r.type==="구강청소").length}회</span><span class="pill">네뷸 ${today.filter(r=>r.type==="네뷸").length}회</span><span class="pill">토닥이 ${today.filter(r=>r.type==="토닥이").length}회</span><span class="pill">수동적 ROM ${today.filter(r=>r.type==="수동적 ROM").length}회</span>
     <span class="pill">혈압 ${bpHighLowText(today)}</span>`:`<div class="warnbox">오늘 저장된 기록이 없습니다.</div>`;
   document.getElementById("summaryBox").textContent=makeTodaySummary(today);
   document.getElementById("todayList").innerHTML=today.map(entryHtml).join("");
@@ -424,6 +425,7 @@ function inferTypeFromText(text){
   if(/수동적\s*ROM|수동\s*ROM|ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(text)) return "수동적 ROM";
   if(/구토/.test(text)) return "구토";
   if(/석션|suction/i.test(text)) return "석션";
+  if(/구강청소|구강\s*청소|입안청소|입안\s*청소|oral\s*care|mouth\s*care/i.test(text)) return "구강청소";
   if(/네뷸|nebul/i.test(text)) return "네뷸";
   if(/토닥|vest|커프/i.test(text)) return "토닥이";
   if(/수동적\s*ROM|수동\s*ROM|ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(text)) return "수동적 ROM";
@@ -604,6 +606,26 @@ function parseOneLogLine(line, baseDate){
   };
 }
 
+
+function actionTypesInText(text){
+  const s=String(text||"");
+  const arr=[];
+  if(/네뷸|nebul/i.test(s)) arr.push("네뷸");
+  if(/토닥|vest|커프/i.test(s)) arr.push("토닥이");
+  if(/석션|suction/i.test(s)) arr.push("석션");
+  if(/구강청소|구강\s*청소|입안청소|입안\s*청소|oral\s*care|mouth\s*care/i.test(s)) arr.push("구강청소");
+  if(/수동적\s*ROM|수동\s*ROM|ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(s)) arr.push("수동적 ROM");
+  return [...new Set(arr)];
+}
+
+function expandCompoundRecords(record){
+  const actions=actionTypesInText(record.memo||"");
+  if(actions.length>=2){
+    return actions.map(t=>({...record,type:t,memo:`${record.memo}\n[자동분리: ${t}]`}));
+  }
+  return [record];
+}
+
 function parsePastedLog(){
   const text = document.getElementById("pasteLog").value.trim();
   if(!text) return [];
@@ -615,7 +637,7 @@ function parsePastedLog(){
 
   function flushPending(){
     if(pending){
-      rows.push(parseOneLogLine(pending.text, pending.date));
+      rows.push(...expandCompoundRecords(parseOneLogLine(pending.text, pending.date)));
       pending = null;
     }
   }
@@ -670,41 +692,89 @@ function previewPastedLog(){
 }
 
 
-function normalizeForDuplicate(s){
-  return String(s||"")
-    .replace(/\s+/g," ")
-    .replace(/[，、]/g,",")
-    .trim();
-}
-
-function recordDuplicateKey(r){
-  const dt = r.dt || "";
-  const type = r.type || "";
-  const memo = normalizeForDuplicate(r.memo || "");
-  return `${dt}__${type}__${memo}`;
-}
-
-function isDuplicateRecord(candidate){
-  const key = recordDuplicateKey(candidate);
-  return (records || []).some(r => recordDuplicateKey(r) === key);
-}
-
-function removeDuplicateCandidates(candidates){
-  const existingKeys = new Set((records || []).map(recordDuplicateKey));
-  const seenInPaste = new Set();
-  const unique = [];
-  const skipped = [];
-
-  for(const r of candidates){
-    const key = recordDuplicateKey(r);
-    if(existingKeys.has(key) || seenInPaste.has(key)){
-      skipped.push(r);
-    }else{
+else{
       seenInPaste.add(key);
       unique.push(r);
     }
   }
 
+  return {unique, skipped};
+}
+
+
+
+function normalizeForDuplicate(s){
+  return String(s||"")
+    .replace(/\s+/g," ")
+    .replace(/[，、]/g,",")
+    .replace(/\[자동분리:\s*(네뷸|토닥이|석션|구강청소|수동적 ROM)\]/g,"")
+    .trim();
+}
+
+function measurableSignature(r){
+  const parts=[];
+  if(r.urine!==null && r.urine!==undefined && r.urine!=="") parts.push(`urine:${r.urine}`);
+  if(r.stool!==null && r.stool!==undefined && r.stool!=="") parts.push(`stool:${r.stool}`);
+  if(r.feed!==null && r.feed!==undefined && r.feed!=="") parts.push(`feed:${r.feed}`);
+  if(r.water!==null && r.water!==undefined && r.water!=="") parts.push(`water:${r.water}`);
+  if(r.residual!==null && r.residual!==undefined && r.residual!=="") parts.push(`residual:${r.residual}`);
+  if(r.spo2!==null && r.spo2!==undefined && r.spo2!=="") parts.push(`spo2:${r.spo2}`);
+  if(r.hr!==null && r.hr!==undefined && r.hr!=="") parts.push(`hr:${r.hr}`);
+  if(r.sbp!==null && r.sbp!==undefined && r.sbp!=="") parts.push(`bp:${r.sbp}/${r.dbp??""}`);
+  if(r.temp!==null && r.temp!==undefined && r.temp!=="") parts.push(`temp:${r.temp}`);
+  if(r.hob!==null && r.hob!==undefined && r.hob!=="") parts.push(`hob:${r.hob}`);
+  return parts.join("|");
+}
+
+function alternateDuplicateKeys(r){
+  const keys = new Set();
+  const dt = r.dt || "";
+  const date = dt.slice(0,10);
+  const time = dt.slice(11,16);
+  const type = r.type || "";
+  const memo = normalizeForDuplicate(r.memo || "");
+  const sig = measurableSignature(r);
+
+  keys.add(`${dt}__${type}__${sig || memo}`);
+  keys.add(`${dt}__${type}__${memo}`);
+
+  if(r.urine!==null && r.urine!==undefined && r.urine!=="") { keys.add(`${dt}__urine__${r.urine}`); keys.add(`${date}__${time}__urine__${r.urine}`); }
+  if(r.stool!==null && r.stool!==undefined && r.stool!=="") { keys.add(`${dt}__stool__${r.stool}`); keys.add(`${date}__${time}__stool__${r.stool}`); }
+  if(r.feed!==null && r.feed!==undefined && r.feed!=="") keys.add(`${dt}__feed__${r.feed}`);
+  if(r.water!==null && r.water!==undefined && r.water!=="") keys.add(`${dt}__water__${r.water}`);
+  if(r.residual!==null && r.residual!==undefined && r.residual!=="") keys.add(`${dt}__residual__${r.residual}`);
+
+  if(["네뷸","토닥이","석션","구강청소","수동적 ROM"].includes(type)) {
+    keys.add(`${dt}__action__${type}`);
+    keys.add(`${date}__${time}__action__${type}`);
+  }
+  return [...keys];
+}
+
+function existingDuplicateKeySet(){
+  const set = new Set();
+  for(const r of (records || [])){
+    for(const k of alternateDuplicateKeys(r)) set.add(k);
+  }
+  return set;
+}
+
+function isDuplicateRecord(candidate){
+  const existing = existingDuplicateKeySet();
+  return alternateDuplicateKeys(candidate).some(k => existing.has(k));
+}
+
+function removeDuplicateCandidates(candidates){
+  const existingKeys = existingDuplicateKeySet();
+  const seenInPaste = new Set();
+  const unique = [];
+  const skipped = [];
+  for(const r of candidates){
+    const keys = alternateDuplicateKeys(r);
+    const dup = keys.some(k => existingKeys.has(k) || seenInPaste.has(k));
+    if(dup) skipped.push(r);
+    else { keys.forEach(k => seenInPaste.add(k)); unique.push(r); }
+  }
   return {unique, skipped};
 }
 
@@ -726,16 +796,13 @@ async function savePastedLog(){
   }
 
   const msg = skipped.length
-    ? `${parsedRows.length}개 줄 중 새 기록 ${rows.length}개만 저장합니다.
+    ? `${parsedRows.length}개 후보 중 새 기록 ${rows.length}개만 저장합니다.
 중복 ${skipped.length}개는 건너뜁니다.`
     : `${rows.length}개 기록을 저장할까요?`;
-
   if(!confirm(msg)) return;
 
   try{
-    for(const r of rows){
-      await addDoc(collection(db,roomPath),r);
-    }
+    for(const r of rows){ await addDoc(collection(db,roomPath),r); }
     document.getElementById("pasteLog").value="";
     document.getElementById("pastePreview").textContent=`저장 완료: 새 기록 ${rows.length}개, 중복 건너뜀 ${skipped.length}개`;
     showScreen("records");
@@ -746,6 +813,7 @@ async function savePastedLog(){
     alert("붙여넣기 저장 실패: "+e.message);
   }
 }
+
 
 
 window.previewPastedLog=previewPastedLog;window.savePastedLog=savePastedLog;window.joinFamily=joinFamily;window.leaveFamily=leaveFamily;window.saveEntry=saveEntry;window.clearForm=clearForm;window.quickType=quickType;window.showScreen=showScreen;window.renderRecords=renderRecords;window.copySummary=copySummary;window.copyShareText=copyShareText;window.exportJSON=exportJSON;window.exportCSV=exportCSV;window.deleteEntry=deleteEntry;
