@@ -37,7 +37,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 이 방식은 로그인 없이 <b>가족코드</b>로 같은 기록방에 들어갑니다. 가족코드를 아는 사람은 기록을 볼 수 있으니 iMessage 가족방 안에서만 공유하세요.
 </div>
 <label>기록자 이름</label>
-<input id="authorName" placeholder="예: 나, 엄마, 큰형">
+<input id="authorName" placeholder="예: 나 / 엄마 / 큰형">
 <label>가족코드</label>
 <input id="familyCode" placeholder="3434" autocapitalize="none" inputmode="numeric">
 <div class="row">
@@ -90,28 +90,31 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 </div>
 </div>
 
-<div class="card">
-<h2>로그 붙여넣기</h2>
-<div class="note">
-평소 쓰던 아버지 간병 로그를 그대로 붙여넣으면 줄 단위로 기록을 나눠 저장합니다. 날짜가 2일 이상 섞여 있으면 날짜별로 나눠 저장합니다. 예: 26.6/13 토, 26.6/14 일.
-시간, 혈압, SpO₂, HR, 체온, 식사량, 물, 소변, 대변, 위잔류량, HOB 등은 가능한 만큼 자동 추출하고, 원문은 메모에 남깁니다.
-</div>
-<label>붙여넣기 로그</label>
-<textarea id="pasteLog" style="min-height:180px" placeholder="예:
-26.6/13 토
-03:00 석션
-03:20 소변 120g
-22:45 허리 수동 ROM
 
-26.6/14 일
-08:00 식사 330mL + 물 240mL
-13:10 대변 50g"></textarea>
-<div class="row">
-<button class="primary" onclick="savePastedLog()">붙여넣은 로그 저장</button>
-<button onclick="previewPastedLog()">미리보기</button>
-<button onclick="document.getElementById('pasteLog').value=''">비우기</button>
-</div>
-<div id="pastePreview" class="box" style="margin-top:10px">붙여넣은 로그 미리보기가 여기에 표시됩니다.</div>
+<div class="card" id="pasteLogCard">
+  <h2>로그 붙여넣기</h2>
+  <div class="note">
+    네가 평소 쓰는 형식 그대로 붙여넣으면 됩니다. 날짜 헤더와 ㅇ시간 기록을 기준으로 나눠 저장합니다.
+    예: <b>2026.6/14 일 320일차</b>, <b>2026.6/13 토 319일차</b>
+  </div>
+  <label>붙여넣기 로그</label>
+  <textarea id="pasteLog" style="min-height:220px" placeholder="예:
+2026.6/14 일 320일차
+ㅇ10:30 내가 병원에 옴. 큰형과 교대.
+ - 전달사항
+ • 아침에 식사 330ml, 물 약 240ml
+ㅇ10:40 소변 115g
+
+2026.6/13 토 319일차
+ㅇ3:00 석션 (2/2 깊은)
+ㅇ3:20 소변 120g
+ㅇ6:50 수동적ROM"></textarea>
+  <div class="row">
+    <button class="primary" onclick="savePastedLog()">붙여넣은 로그 저장</button>
+    <button onclick="previewPastedLog()">미리보기</button>
+    <button onclick="document.getElementById('pasteLog').value='';document.getElementById('pastePreview').textContent='붙여넣은 로그 미리보기가 여기에 표시됩니다.'">비우기</button>
+  </div>
+  <div id="pastePreview" class="box" style="margin-top:10px">붙여넣은 로그 미리보기가 여기에 표시됩니다.</div>
 </div>
 
 </section>
@@ -352,6 +355,7 @@ function countRecordsByTypeForDate(records, ymd, typeName){
 
 function inferTypeFromText(text){
   if(/수동적\s*ROM|수동\s*ROM|ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(text)) return "수동적 ROM";
+  if(/수동적\s*ROM|수동\s*ROM|ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(text)) return "수동적 ROM";
   if(/구토/.test(text)) return "구토";
   if(/석션|suction/i.test(text)) return "석션";
   if(/네뷸|nebul/i.test(text)) return "네뷸";
@@ -376,61 +380,129 @@ function extractNumber(pattern, text){
 }
 
 
+
+function normalizeYearToken(y){
+  if(!y) return new Date().getFullYear();
+  const n=Number(y);
+  if(n<100) return 2000+n;
+  return n;
+}
+
+function parseDateFromText(text, fallbackDate){
+  const s=String(text||"").trim();
+
+  // 2026.6/14 일 320일차, 2026.6/13 토 319일차, 26.6/14 일
+  let m=s.match(/(?:^|\s)(\d{2,4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s*\d+일차)?/);
+  if(m){
+    const y=normalizeYearToken(m[1]);
+    return `${y}-${pad(Number(m[2]))}-${pad(Number(m[3]))}`;
+  }
+
+  // 6/14 일, 다음날 6/14 일 06:00
+  m=s.match(/(?:^|\s|다음날\s*)(\d{1,2})\s*[.\/월]\s*(\d{1,2})(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s|$)/);
+  if(m){
+    const y=new Date().getFullYear();
+    return `${y}-${pad(Number(m[1]))}-${pad(Number(m[2]))}`;
+  }
+
+  return fallbackDate || null;
+}
+
+function lineLooksLikeDateHeader(line){
+  const s=String(line||"").trim();
+  if(!s) return false;
+  const d=parseDateFromText(s,null);
+  if(!d) return false;
+
+  // ㅇ10:30 같은 기록 줄은 헤더 아님
+  if(/^[ㅇoO]?\s*\d{1,2}\s*[:시]/.test(s)) return false;
+
+  // 기간 기록은 헤더 아님: 19:00~다음날 6/14 일 06:00까지 소변 570g
+  if(/까지|부터|~/.test(s) && /(소변|대변|식사|물|석션|네뷸|토닥|혈압|산소|심박|체온)/.test(s)) return false;
+
+  const rest=s
+    .replace(/(?:^|\s)\d{2,4}\s*[.\-\/년]\s*\d{1,2}\s*[.\-\/월]\s*\d{1,2}(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s*\d+일차)?/g,"")
+    .replace(/(?:^|\s)\d{1,2}\s*[.\/월]\s*\d{1,2}(?:\s*일)?(?:\s*[월화수목금토일])?/g,"")
+    .trim();
+
+  if(rest==="") return true;
+  if(/^[\s\(\)\[\]\-—–·:]*$/.test(rest)) return true;
+  if(/^(월|화|수|목|금|토|일|요일|\(?[월화수목금토일]\)?|\d+일차|일차|김포|서울대효|요양병원|병원|기록|로그|day|Day).*$/i.test(rest)) return true;
+
+  return s.length<=30 && /[월화수목금토일](\s*\d+일차)?\s*$/.test(s);
+}
+
+function isNewEventLine(line){
+  const s=String(line||"").trim();
+  if(/^[ㅇoO]\s*\d{1,2}\s*[:시]/.test(s)) return true;
+  if(/^\d{1,2}\s*[:시]\s*\d{0,2}/.test(s)) return true;
+  return false;
+}
+
+function cleanEventLine(line){
+  return String(line||"").trim().replace(/^[ㅇoO]\s*/,"").trim();
+}
+
+function parseTimeFromLine(line){
+  const s=cleanEventLine(line);
+  let m=s.match(/^(\d{1,2})\s*[:시]\s*(\d{2})?/);
+  if(!m) return null;
+  return {hh:pad(Number(m[1])), mm:pad(Number(m[2]||0))};
+}
+
 function parseOneLogLine(line, baseDate){
   const original = line.trim();
-  let dt = nowLocalInputValue();
-
   let ymd = baseDate || localDateString();
   const parsedLineDate = parseDateFromText(original, null);
-  if(parsedLineDate){
+  if(parsedLineDate && !/다음날/.test(original)){
     ymd = parsedLineDate;
   }
 
-  const timeMatch = original.match(/(?:^|\s|[,\[])(\d{1,2})[:시](\d{2})?/);
-  if(timeMatch){
-    const hh = pad(Number(timeMatch[1]));
-    const mm = pad(Number(timeMatch[2] || 0));
-    dt = `${ymd}T${hh}:${mm}`;
-  } else {
-    dt = `${ymd}T${nowLocalInputValue().slice(11,16)}`;
+  let dt = `${ymd}T${nowLocalInputValue().slice(11,16)}`;
+  const t=parseTimeFromLine(original);
+  if(t){
+    dt = `${ymd}T${t.hh}:${t.mm}`;
+  }else{
+    const timeMatch = original.match(/(?:^|\s|[,\[])(\d{1,2})[:시](\d{2})?/);
+    if(timeMatch){
+      dt = `${ymd}T${pad(Number(timeMatch[1]))}:${pad(Number(timeMatch[2] || 0))}`;
+    }
   }
 
   let sbp=null, dbp=null;
   const bpMatch = original.match(/(?:BP|혈압)?\s*(\d{2,3})\s*\/\s*(\d{2,3})/i);
   if(bpMatch){ sbp=Number(bpMatch[1]); dbp=Number(bpMatch[2]); }
 
-  const spo2 = extractNumber(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})/i, original);
-  const hr = extractNumber(/(?:HR|맥박)\s*[:=]?\s*(\d{2,3})/i, original);
+  let spo2 = null;
+  const spoMatch = original.match(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})(?:\s*[~\-]\s*(\d{2,3}))?/i);
+  if(spoMatch) spo2 = Number(spoMatch[2] || spoMatch[1]);
+
+  const hr = extractNumber(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i, original);
   const temp = extractNumber(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i, original);
   const oxygen = extractNumber(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i, original);
 
   let feed = null;
-  const feedMatch = original.match(/(?:식사|경관식|피딩|뉴케어)[^\d]{0,8}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)/i);
+  const feedMatch = original.match(/(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\d]{0,12}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)/i);
   if(feedMatch) feed = Number(feedMatch[1].replace(",", "."));
 
   let water = null;
-  const waterMatch = original.match(/(?:물|수분)[^\d]{0,8}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)/i);
+  const waterMatch = original.match(/(?:물|수분)[^\d]{0,12}(?:약\s*)?(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)/i);
   if(waterMatch) water = Number(waterMatch[1].replace(",", "."));
 
   let residual = null;
   const residualMatch = original.match(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,8}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)?/i);
   if(residualMatch) residual = Number(residualMatch[1].replace(",", "."));
 
-  // 중요 수정:
-  // 1) 소변은 소변 항목에만 기록
-  // 2) 대변은 '대변' 또는 '변' 단독 표현만 기록
-  // 3) '소변' 안의 '변'을 대변으로 오인하지 않음
   let urine = null;
-  const urineMatch = original.match(/소변[^\d]{0,10}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
+  const urineMatch = original.match(/소변[^\d]{0,16}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
   if(urineMatch) urine = Number(urineMatch[1].replace(",", "."));
 
   let stool = null;
-  const stoolMatch1 = original.match(/대변[^\d]{0,10}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
+  const stoolMatch1 = original.match(/대변[^\d]{0,16}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
   if(stoolMatch1){
     stool = Number(stoolMatch1[1].replace(",", "."));
   } else {
-    // '변 50g'처럼 쓰는 경우만 허용. '소변 50g'은 제외.
-    const stoolMatch2 = original.match(/(?:^|[^소대])변[^\d]{0,10}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
+    const stoolMatch2 = original.match(/(?:^|[^소대])변[^\d]{0,16}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
     if(stoolMatch2) stool = Number(stoolMatch2[1].replace(",", "."));
   }
 
@@ -464,104 +536,46 @@ function parseOneLogLine(line, baseDate){
   };
 }
 
-
-function normalizeYearToken(y){
-  if(!y) return new Date().getFullYear();
-  const n=Number(y);
-  if(n<100) return 2000+n;
-  return n;
-}
-
-function parseDateFromText(text, fallbackDate){
-  // 지원 형식:
-  // 2026-06-14, 2026.6.14, 2026.6/14, 2026년 6월 14일
-  // 26.6/14 일, 26.6/13 토
-  // 6/14 일, 6.14 일
-  let m = text.match(/(?:^|\s)(\d{2,4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})(?:\s*일)?(?:\s*[월화수목금토일])?/);
-  if(m){
-    const y=normalizeYearToken(m[1]);
-    return `${y}-${pad(Number(m[2]))}-${pad(Number(m[3]))}`;
-  }
-
-  // 연도 없이 월/일만 있는 경우: 현재 연도로 보정
-  m = text.match(/(?:^|\s)(\d{1,2})\s*[.\/월]\s*(\d{1,2})(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s|$)/);
-  if(m){
-    const y=new Date().getFullYear();
-    return `${y}-${pad(Number(m[1]))}-${pad(Number(m[2]))}`;
-  }
-
-  return fallbackDate || null;
-}
-
-function lineLooksLikeDateHeader(line){
-  const trimmed=line.trim();
-  const parsed=parseDateFromText(trimmed,null);
-  if(!parsed) return false;
-
-  // 시간이 같이 있으면 일반 기록일 수 있으므로 날짜 헤더로 보지 않음
-  // 단, '26.6/14 일'의 '일'은 시간 아님.
-  const withoutDate = trimmed
-    .replace(/(?:^|\s)\d{2,4}\s*[.\-\/년]\s*\d{1,2}\s*[.\-\/월]\s*\d{1,2}(?:\s*일)?(?:\s*[월화수목금토일])?/g,'')
-    .replace(/(?:^|\s)\d{1,2}\s*[.\/월]\s*\d{1,2}(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s|$)/g,'')
-    .trim();
-
-  // 날짜 빼고 남는 말이 거의 없거나, 요일/일차/구분선 정도면 헤더
-  if(withoutDate === "") return true;
-  if(/^[\(\)\[\]\s\-—–·:]*$/.test(withoutDate)) return true;
-  if(/^(월|화|수|목|금|토|일|요일|\(?[월화수목금토일]\)?|일차|김포|서울대효|요양병원|병원|기록|로그|day|Day|\d+일차|[-—–·\s]+)$/i.test(withoutDate)) return true;
-
-  // '26.6/14 일'처럼 날짜+요일만 있는 짧은 줄은 헤더
-  if(trimmed.length <= 18 && /[월화수목금토일]\s*$/.test(trimmed)) return true;
-
-  return false;
-}
-
 function parsePastedLog(){
   const text = document.getElementById("pasteLog").value.trim();
   if(!text) return [];
 
   let currentDate = localDateString();
-  const firstDate = parseDateFromText(text,null);
-  if(firstDate) currentDate = firstDate;
-
   const rows = [];
-  const lines = text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+  const lines = text.split(/\n/).map(s=>s.trim()).filter(Boolean);
+  let pending = null;
 
-  for(const line of lines){
-    const lineDate = parseDateFromText(line,null);
+  function flushPending(){
+    if(pending){
+      rows.push(parseOneLogLine(pending.text, pending.date));
+      pending = null;
+    }
+  }
+
+  for(const rawLine of lines){
+    const line = rawLine.trim();
+    if(!line) continue;
 
     if(lineLooksLikeDateHeader(line)){
-      currentDate = lineDate;
+      flushPending();
+      currentDate = parseDateFromText(line, currentDate) || currentDate;
       continue;
     }
 
-    // 날짜와 시간이 같은 줄에 있으면 그 줄 자체 날짜를 사용
-    const baseForThisLine = lineDate || currentDate;
-    if(lineDate) currentDate = lineDate;
-
-    rows.push(parseOneLogLine(line, baseForThisLine));
-  }
-
-  return rows;
-}
-
-)[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/);
-  if(firstDate) currentDate = `${firstDate[1]}-${pad(Number(firstDate[2]))}-${pad(Number(firstDate[3]))}`;
-
-  const rows = [];
-  const lines = text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
-
-  for(const line of lines){
-    const lineDate = parseDateFromText(line, null);
-    if(lineDate) currentDate = lineDate;
-
-    if(lineLooksLikeDateHeader(line)){
+    if(isNewEventLine(line)){
+      flushPending();
+      pending = {date: currentDate, text: cleanEventLine(line)};
       continue;
     }
 
-    rows.push(parseOneLogLine(line, currentDate));
+    if(pending){
+      pending.text += "\n" + line;
+    }else{
+      pending = {date: currentDate, text: line};
+    }
   }
 
+  flushPending();
   return rows;
 }
 
