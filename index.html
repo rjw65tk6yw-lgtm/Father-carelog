@@ -325,7 +325,7 @@ function entryHtml(r){
   return `<div class="entry">
     <div class="time">${escapeHtml(formatTime(r.dt))} · ${escapeHtml(r.authorName||"-")}</div>
     <div class="title">${escapeHtml(r.type)}${parts.length?" · "+escapeHtml(parts.join(" · ")):""}</div>
-    ${r.memo?`<div class="memo">${escapeHtml(r.memo)}</div>`:""}${warns}
+    ${r.memo?`<div class="memo">${escapeHtml(displayMemoText(r))}</div>`:""}${warns}
     <button class="danger" style="margin-top:6px;padding:8px 10px;font-size:12px" onclick="deleteEntry('${r.id}')">삭제</button>
   </div>`;
 }
@@ -333,7 +333,7 @@ function makeTodaySummary(rows){
   if(!rows.length)return "오늘 저장된 기록이 없습니다.";
   const suction=rows.filter(r=>r.type==="석션").length,neb=rows.filter(r=>r.type==="네뷸").length,pat=rows.filter(r=>r.type==="토닥이").length,rom=rows.filter(r=>r.type==="수동적 ROM").length,oral=rows.filter(r=>r.type==="구강청소").length,vomit=rows.filter(r=>r.type==="구토").length;
   const warnings=rows.flatMap(r=>warningItems(r).map(x=>`- ${formatTime(r.dt)} ${x[1]} (${r.authorName||"-"})`));
-  const memos=rows.filter(r=>r.memo).slice(-10).map(r=>`- ${formatTime(r.dt)} [${r.type}/${r.authorName||"-"}] ${r.memo}`);
+  const memos=rows.filter(r=>r.memo).slice(-10).map(r=>`- ${formatTime(r.dt)} [${r.type}/${r.authorName||"-"}] ${displayMemoText(r)}`);
   return [`[${localDateString()} 아버지 케어 요약]`,"",
     `총 기록: ${rows.length}개`,`식사/경관식 총량: ${sum(rows,"feed")}mL`,`물 총량: ${sum(rows,"water")}mL`,
     `소변 총량: ${sum(rows,"urine")}`,`대변 총량: ${sum(rows,"stool")}`,
@@ -663,6 +663,19 @@ function duplicateGroups(){
 }
 
 
+
+function stripInternalKeyLines(text){
+  return String(text||"")
+    .split(/\n/)
+    .filter(line => !/^\s*key\s*:\s*r_[a-z0-9]+/i.test(line.trim()))
+    .join("\n")
+    .trim();
+}
+
+function displayMemoText(record){
+  return stripInternalKeyLines(record && record.memo ? record.memo : "");
+}
+
 function previewPastedLog(){
   const rows = parsePastedLog();
   if(!rows.length){
@@ -680,7 +693,7 @@ function previewPastedLog(){
     if(r.urine!==null)parts.push(`소변 ${r.urine}`);
     if(r.stool!==null)parts.push(`대변 ${r.stool}`);
     if(r.residual!==null)parts.push(`잔류 ${r.residual}`);
-    return `${i+1}. ${formatTime(r.dt)} [${r.type}] ${parts.join(" / ")}\n   ${r.memo}\n   key: ${stableDocId(r)}`;
+    return `${i+1}. ${formatTime(r.dt)} [${r.type}] ${parts.join(" / ")}\n   ${displayMemoText(r)}\n`;
   }).join("\n\n");
 }
 
