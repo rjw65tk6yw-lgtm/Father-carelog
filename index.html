@@ -64,6 +64,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div><label>기록 종류</label><select id="type">
 <option>활력징후</option><option>식사/경관식</option><option>위잔류량</option><option>구토</option>
 <option>석션</option><option>네뷸</option><option>토닥이</option><option>체위변경</option>
+<option>수동적 ROM</option>
 <option>피부/욕창</option><option>대소변</option><option>투석</option><option>약</option>
 <option>간호사/병원 메모</option><option>특이사항</option>
 </select></div>
@@ -297,13 +298,13 @@ function entryHtml(r){
 }
 function makeTodaySummary(rows){
   if(!rows.length)return "오늘 저장된 기록이 없습니다.";
-  const suction=rows.filter(r=>r.type==="석션").length,neb=rows.filter(r=>r.type==="네뷸").length,pat=rows.filter(r=>r.type==="토닥이").length,vomit=rows.filter(r=>r.type==="구토").length;
+  const suction=rows.filter(r=>r.type==="석션").length,neb=rows.filter(r=>r.type==="네뷸").length,pat=rows.filter(r=>r.type==="토닥이").length,rom=rows.filter(r=>r.type==="수동적 ROM").length,vomit=rows.filter(r=>r.type==="구토").length;
   const warnings=rows.flatMap(r=>warningItems(r).map(x=>`- ${formatTime(r.dt)} ${x[1]} (${r.authorName||"-"})`));
   const memos=rows.filter(r=>r.memo).slice(-10).map(r=>`- ${formatTime(r.dt)} [${r.type}/${r.authorName||"-"}] ${r.memo}`);
   return [`[${localDateString()} 아버지 케어 요약]`,"",
     `총 기록: ${rows.length}개`,`식사/경관식 총량: ${sum(rows,"feed")}mL`,`물 총량: ${sum(rows,"water")}mL`,
     `소변 총량: ${sum(rows,"urine")}`,`대변 총량: ${sum(rows,"stool")}`,
-    `석션: ${suction}회 / 네뷸: ${neb}회 / 토닥이: ${pat}회 / 구토: ${vomit}회`,
+    `석션: ${suction}회 / 네뷸: ${neb}회 / 토닥이: ${pat}회 / 수동적 ROM: ${rom}회 / 구토: ${vomit}회`,
     `혈압: ${bpHighLowText(rows)}`,`SpO₂: ${minVal(rows,"spo2")??"-"}~${maxVal(rows,"spo2")??"-"}%`,`체온 최고: ${maxVal(rows,"temp")??"-"}℃`,"",
     "[주의 표시]",warnings.length?warnings.join("\n"):"- 없음","",
     "[주요 메모]",memos.length?memos.join("\n"):"- 없음"].join("\n");
@@ -313,7 +314,7 @@ function renderRecords(){
   const all=[...allRows].sort((a,b)=>(b.dt||"").localeCompare(a.dt||""));
   document.getElementById("todayStats").innerHTML=today.length?`
     <span class="pill">오늘 ${today.length}개</span><span class="pill">식사 ${sum(today,"feed")}mL</span><span class="pill">물 ${sum(today,"water")}mL</span>
-    <span class="pill">석션 ${today.filter(r=>r.type==="석션").length}회</span><span class="pill">네뷸 ${today.filter(r=>r.type==="네뷸").length}회</span><span class="pill">토닥이 ${today.filter(r=>r.type==="토닥이").length}회</span>
+    <span class="pill">석션 ${today.filter(r=>r.type==="석션").length}회</span><span class="pill">네뷸 ${today.filter(r=>r.type==="네뷸").length}회</span><span class="pill">토닥이 ${today.filter(r=>r.type==="토닥이").length}회</span><span class="pill">수동적 ROM ${today.filter(r=>r.type==="수동적 ROM").length}회</span>
     <span class="pill">혈압 ${bpHighLowText(today)}</span>`:`<div class="warnbox">오늘 저장된 기록이 없습니다.</div>`;
   document.getElementById("summaryBox").textContent=makeTodaySummary(today);
   document.getElementById("todayList").innerHTML=today.map(entryHtml).join("");
@@ -340,11 +341,18 @@ function showScreen(name){
 }
 
 
+
+function countRecordsByTypeForDate(records, ymd, typeName){
+  return records.filter(r => (r.dt || "").slice(0,10) === ymd && r.type === typeName).length;
+}
+
 function inferTypeFromText(text){
+  if(/수동적\s*ROM|수동\s*ROM|ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(text)) return "수동적 ROM";
   if(/구토/.test(text)) return "구토";
   if(/석션|suction/i.test(text)) return "석션";
   if(/네뷸|nebul/i.test(text)) return "네뷸";
   if(/토닥|vest|커프/i.test(text)) return "토닥이";
+  if(/수동적\s*ROM|수동\s*ROM|ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(text)) return "수동적 ROM";
   if(/좌측위|우측위|정상위|앙와위|체위|HOB|휠체어/.test(text)) return "체위변경";
   if(/식사|경관식|피딩|뉴케어|mL|ml/.test(text) && !/소변|대변/.test(text)) return "식사/경관식";
   if(/소변|대변|변/.test(text)) return "대소변";
