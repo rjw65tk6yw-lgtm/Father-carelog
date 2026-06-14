@@ -148,7 +148,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <section id="screen-records" class="hide">
 <div class="card">
 <h2>오늘 기록·요약</h2>
-<div class="row"><button class="primary" onclick="renderRecords()">새로고침</button><button onclick="copySummary()">요약 복사</button></div>
+<div class="row"><button class="primary" onclick="renderRecords()">새로고침</button><button onclick="copySummary()">요약 복사</button><button onclick="downloadTodaySummaryCsv()">오늘 기록·요약 CSV 저장</button><button onclick="saveTodaySummaryByDate()">오늘 요약 저장/덮어쓰기</button></div>
 <div id="syncStatus" class="small" style="margin-top:8px">동기화 대기 중</div>
 <div id="todayStats" style="margin-top:10px"></div>
 <div id="summaryBox" class="box" style="margin-top:10px"></div>
@@ -177,10 +177,11 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div class="row"><button onclick="copyShareText()">공유문구 복사</button></div>
 </div>
 
+
 <div class="card">
   <h2>CSV 수정 반영</h2>
   <div class="note">
-    수정용 CSV를 내보낸 뒤, 잘못된 행 전체를 CSV에서 삭제할 수 있습니다.
+    수정용 CSV를 내보낸 뒤, 잘못된 행 전체를 CSV에서 삭제하거나 값을 수정하세요.
     수정 후 CSV 전체 내용을 아래 칸에 붙여넣으세요.
   </div>
   <div class="row">
@@ -194,8 +195,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div class="card">
   <h2>날짜별 요약 CSV</h2>
   <div class="note">
-    날짜별로 1줄씩 요약 CSV를 따로 내보냅니다.
-    날짜별 요약 저장/덮어쓰기는 같은 날짜 요약을 하나만 유지합니다.
+    전체 기록을 날짜별 1줄 요약 CSV로 내보냅니다. 같은 날짜 요약은 저장 시 하나만 유지됩니다.
   </div>
   <div class="row">
     <button onclick="downloadDailySummaryCsv()">날짜별 요약 CSV 내보내기</button>
@@ -852,68 +852,118 @@ async function cleanupDuplicates(){
 }
 
 
+
 function downloadText(filename, text, mime){
   const blob=new Blob([text],{type:mime||"text/plain;charset=utf-8"});
+  const url=URL.createObjectURL(blob);
   const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
+  a.href=url;
   a.download=filename;
+  document.body.appendChild(a);
   a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  setTimeout(()=>{URL.revokeObjectURL(url);a.remove();},1000);
 }
+
 function csvEscape(v){
   const s=String(v??"");
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
 }
+
 function parseCsvText(text){
   const rows=[]; let row=[], field="", q=false; text=String(text||"");
   for(let i=0;i<text.length;i++){
     const c=text[i], n=text[i+1];
-    if(q){ if(c=='"'&&n=='"'){field+='"';i++;} else if(c=='"')q=false; else field+=c; }
-    else{ if(c=='"')q=true; else if(c==','){row.push(field);field="";} else if(c=='\n'){row.push(field);rows.push(row);row=[];field="";} else if(c!='\r')field+=c; }
+    if(q){
+      if(c=='"'&&n=='"'){field+='"';i++;}
+      else if(c=='"')q=false;
+      else field+=c;
+    }else{
+      if(c=='"')q=true;
+      else if(c==','){row.push(field);field="";}
+      else if(c=='\n'){row.push(field);rows.push(row);row=[];field="";}
+      else if(c!='\r')field+=c;
+    }
   }
   row.push(field); rows.push(row);
   return rows.filter(r=>r.some(v=>String(v).trim()!=""));
 }
-function makeRecordKey(r){
+
+function stableRecordId(r){
+  if(r.id||r._id||r.key) return r.id||r._id||r.key;
   const norm=(typeof normalizeForDuplicate==="function")?normalizeForDuplicate:(x=>String(x||"").replace(/\s+/g," ").trim());
   const base=[r.dt||"",r.type||"",r.urine??"",r.stool??"",r.feed??"",r.water??"",r.weight??"",norm(r.memo||"")].join("|");
   let h=0; for(let i=0;i<base.length;i++){h=((h<<5)-h)+base.charCodeAt(i);h|=0;}
   return "r_"+Math.abs(h).toString(36);
 }
+
+function recordsForCsv(){
+  return (allRows||[]).slice().sort((a,b)=>(a.dt||"").localeCompare(b.dt||""));
+}
+
+function displayMemoForCsv(r){
+  if(typeof displayMemoText==="function") return displayMemoText(r);
+  if(typeof stripInternalKeyLines==="function") return stripInternalKeyLines(r.memo||"");
+  return r.memo||"";
+}
+
 function recordsToEditableCsv(){
   const headers=["id","날짜시간","기록종류","SpO2","HR","체온","산소","체중","혈압수축","혈압이완","식사","물","잔류","소변","대변","HOB","체위","체위상세","호흡","메모"];
-  const rows=(records||[]).slice().sort((a,b)=>(a.dt||"").localeCompare(b.dt||"")).map(r=>[
-    r.id||r._id||r.key||makeRecordKey(r), r.dt||"", r.type||"", r.spo2??"", r.hr??"", r.temp??"", r.oxygen??"", r.weight??"", r.sbp??"", r.dbp??"", r.feed??"", r.water??"", r.residual??"", r.urine??"", r.stool??"", r.hob??"", r.position||"", r.positionDetail||"", r.breath||"", (typeof displayMemoText==="function"?displayMemoText(r):(r.memo||""))
+  const rows=recordsForCsv().map(r=>[
+    stableRecordId(r), r.dt||"", r.type||"", r.spo2??"", r.hr??"", r.temp??"", r.oxygen??"", r.weight??"", r.sbp??"", r.dbp??"",
+    r.feed??"", r.water??"", r.residual??"", r.urine??"", r.stool??"", r.hob??"", r.position||"", r.positionDetail||"", r.breath||"", displayMemoForCsv(r)
   ]);
   return [headers,...rows].map(r=>r.map(csvEscape).join(",")).join("\n");
 }
+
 function downloadEditableCsv(){
+  if(!allRows || !allRows.length){alert("내보낼 기록이 없습니다.");return;}
   downloadText(`아버지_케어로그_수정용_${localDateString()}.csv`,"\ufeff"+recordsToEditableCsv(),"text/csv;charset=utf-8");
 }
-function csvNum(v){ const s=String(v??"").trim(); if(s==="")return null; const n=Number(s.replace(",",".")); return Number.isFinite(n)?n:null; }
+
+function csvNum(v){
+  const s=String(v??"").trim();
+  if(s==="")return null;
+  const n=Number(s.replace(",","."));
+  return Number.isFinite(n)?n:null;
+}
+
 function csvRowToRecord(o){
   return {
     dt:o["날짜시간"]||"", type:o["기록종류"]||"특이사항",
     spo2:csvNum(o["SpO2"]), hr:csvNum(o["HR"]), temp:csvNum(o["체온"]), oxygen:csvNum(o["산소"]), weight:csvNum(o["체중"]),
     sbp:csvNum(o["혈압수축"]), dbp:csvNum(o["혈압이완"]), feed:csvNum(o["식사"]), water:csvNum(o["물"]), residual:csvNum(o["잔류"]),
     urine:csvNum(o["소변"]), stool:csvNum(o["대변"]), hob:csvNum(o["HOB"]),
-    position:o["체위"]||"", positionDetail:o["체위상세"]||"", breath:o["호흡"]||"", memo:(typeof stripInternalKeyLines==="function"?stripInternalKeyLines(o["메모"]||""):(o["메모"]||"")),
+    position:o["체위"]||"", positionDetail:o["체위상세"]||"", breath:o["호흡"]||"",
+    memo:(typeof stripInternalKeyLines==="function"?stripInternalKeyLines(o["메모"]||""):(o["메모"]||"")),
     authorName:currentAuthor||val("authorName")||"가족", familyCode:currentCode, updatedAt:serverTimestamp()
   };
 }
+
+function parseEditedCsvObjects(){
+  const text=document.getElementById("editedCsvText")?.value||"";
+  if(!text.trim()) throw new Error("수정한 CSV 내용을 붙여넣어 주세요.");
+  const rows=parseCsvText(text);
+  if(rows.length<2) throw new Error("CSV 내용이 부족합니다.");
+  const headers=rows[0].map(h=>String(h).trim().replace(/^\ufeff/,""));
+  return rows.slice(1).map(row=>{
+    const o={};
+    headers.forEach((h,i)=>o[h]=row[i]??"");
+    return o;
+  });
+}
+
 async function applyEditedCsv(){
   if(!roomPath){alert("먼저 가족코드로 입장하세요.");showScreen("join");return;}
-  const text=document.getElementById("editedCsvText")?.value||"";
-  if(!text.trim()){alert("수정한 CSV 내용을 붙여넣어 주세요.");return;}
-  const rows=parseCsvText(text); if(rows.length<2){alert("CSV 내용이 부족합니다.");return;}
-  const headers=rows[0].map(h=>String(h).trim().replace(/^\ufeff/,""));
-  const data=rows.slice(1).map(row=>{const o={};headers.forEach((h,i)=>o[h]=row[i]??"");return o;});
+  let data;
+  try{data=parseEditedCsvObjects();}catch(e){alert(e.message);return;}
   if(!confirm(`${data.length}개 CSV 행을 앱 기록에 덮어쓸까요?\n체중 칸을 비우면 앱에서도 체중이 비워집니다.`))return;
   let saved=0;
   try{
     for(const o of data){
-      const r=csvRowToRecord(o); const id=(o["id"]||"").trim()||makeRecordKey(r);
-      await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false}); saved++;
+      const r=csvRowToRecord(o);
+      const id=(o["id"]||o["ID"]||"").trim()||stableRecordId(r);
+      await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false});
+      saved++;
     }
     document.getElementById("editedCsvText").value="";
     alert(`CSV 수정 반영 완료: ${saved}개`);
@@ -922,42 +972,23 @@ async function applyEditedCsv(){
 
 async function syncEditedCsvWithDeletion(){
   if(!roomPath){alert("먼저 가족코드로 입장하세요.");showScreen("join");return;}
-  const text=document.getElementById("editedCsvText")?.value||"";
-  if(!text.trim()){alert("수정한 CSV 내용을 붙여넣어 주세요.");return;}
-
-  const rows=parseCsvText(text);
-  if(rows.length<2){alert("CSV 내용이 부족합니다.");return;}
-
-  const headers=rows[0].map(h=>String(h).trim().replace(/^\ufeff/,""));
-  const data=rows.slice(1).map(row=>{
-    const o={};
-    headers.forEach((h,i)=>o[h]=row[i]??"");
-    return o;
-  });
-
+  let data;
+  try{data=parseEditedCsvObjects();}catch(e){alert(e.message);return;}
   const csvIds=new Set();
   for(const o of data){
-    const tempRecord=csvRowToRecord(o);
-    const id=(o["id"]||o["ID"]||"").trim() || makeRecordKey(tempRecord);
+    const r=csvRowToRecord(o);
+    const id=(o["id"]||o["ID"]||"").trim()||stableRecordId(r);
     if(id) csvIds.add(id);
   }
-
-  const existingIds=(records||[]).map(r=>r.id||r._id||r.key||makeRecordKey(r)).filter(Boolean);
+  const existingIds=(allRows||[]).map(stableRecordId).filter(Boolean);
   const toDelete=existingIds.filter(id=>!csvIds.has(id));
-
-  const msg =
-    `CSV 기준으로 앱 기록을 동기화할까요?\n\n` +
-    `CSV에 남은 기록: ${data.length}개\n` +
-    `앱에서 삭제될 기록: ${toDelete.length}개\n\n` +
-    `CSV에서 지운 행은 앱에서도 삭제됩니다.`;
-
+  const msg=`CSV 기준으로 앱 기록을 동기화할까요?\n\nCSV에 남은 기록: ${data.length}개\n앱에서 삭제될 기록: ${toDelete.length}개\n\nCSV에서 지운 행은 앱에서도 삭제됩니다.`;
   if(!confirm(msg)) return;
-
   let saved=0, deleted=0;
   try{
     for(const o of data){
       const r=csvRowToRecord(o);
-      const id=(o["id"]||o["ID"]||"").trim() || makeRecordKey(r);
+      const id=(o["id"]||o["ID"]||"").trim()||stableRecordId(r);
       await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false});
       saved++;
     }
@@ -967,34 +998,77 @@ async function syncEditedCsvWithDeletion(){
     }
     document.getElementById("editedCsvText").value="";
     alert(`CSV 동기화 완료\n저장/덮어쓰기: ${saved}개\n삭제: ${deleted}개`);
-  }catch(e){
-    alert("CSV 동기화 실패: "+e.message);
-  }
+  }catch(e){alert("CSV 동기화 실패: "+e.message);}
+}
+
+function summaryObjectForDate(date, rows){
+  const arr=rows||[];
+  const sum=(k)=>arr.reduce((a,r)=>a+(Number(r[k])||0),0);
+  const count=(t)=>arr.filter(r=>r.type===t).length;
+  const latestWeight=(arr.filter(r=>r.weight!==null&&r.weight!==undefined&&r.weight!=="").sort((a,b)=>(a.dt||"").localeCompare(b.dt||"")).pop()||{}).weight??"";
+  const summaryText=(typeof makeTodaySummary==="function") ? makeTodaySummary(arr) : "";
+  return {
+    날짜:date, 기록수:arr.length, 식사:sum("feed"), 물:sum("water"), 소변:sum("urine"), 대변:sum("stool"),
+    석션:count("석션"), 네뷸:count("네뷸"), 토닥이:count("토닥이"), 구강청소:count("구강청소"), 수동적ROM:count("수동적 ROM"),
+    체중:latestWeight, 요약:summaryText
+  };
 }
 
 function dailySummaryRows(){
-  const by={}; for(const r of (records||[])){const d=String(r.dt||"").slice(0,10); if(!d)continue; (by[d] ||= []).push(r);}
-  const sum=(arr,k)=>arr.reduce((a,r)=>a+(Number(r[k])||0),0), count=(arr,t)=>arr.filter(r=>r.type===t).length;
-  return Object.keys(by).sort().map(d=>{const arr=by[d]; const w=(arr.filter(r=>r.weight!=null&&r.weight!=="").sort((a,b)=>(a.dt||"").localeCompare(b.dt||"")).pop()||{}).weight??""; return {
-    날짜:d, 기록수:arr.length, 식사:sum(arr,"feed"), 물:sum(arr,"water"), 소변:sum(arr,"urine"), 대변:sum(arr,"stool"),
-    석션:count(arr,"석션"), 네뷸:count(arr,"네뷸"), 토닥이:count(arr,"토닥이"), 구강청소:count(arr,"구강청소"), 수동적ROM:count(arr,"수동적 ROM"), 체중:w,
-    요약:(typeof makeTodaySummary==="function"?makeTodaySummary(d,arr):"")
-  };});
-}
-function downloadDailySummaryCsv(){
-  const headers=["날짜","기록수","식사","물","소변","대변","석션","네뷸","토닥이","구강청소","수동적ROM","체중","요약"];
-  const rows=dailySummaryRows().map(o=>headers.map(h=>o[h]??""));
-  downloadText(`아버지_케어로그_날짜별요약_${localDateString()}.csv`,"\ufeff"+[headers,...rows].map(r=>r.map(csvEscape).join(",")).join("\n"),"text/csv;charset=utf-8");
-}
-async function saveDailySummariesByDate(){
-  if(!roomPath){alert("먼저 가족코드로 입장하세요.");showScreen("join");return;}
-  const rows=dailySummaryRows(); if(!rows.length){alert("저장할 요약이 없습니다.");return;}
-  if(!confirm(`${rows.length}일치 날짜별 요약을 저장/덮어쓰기 할까요?`))return;
-  try{ for(const o of rows) await setDoc(doc(db,roomPath.replace("/records","/dailySummaries"),o.날짜),{...o,updatedAt:serverTimestamp()},{merge:false}); alert(`날짜별 요약 저장 완료: ${rows.length}일치`);}
-  catch(e){alert("날짜별 요약 저장 실패: "+e.message);}
+  const by={};
+  for(const r of (allRows||[])){
+    const d=String(r.dt||"").slice(0,10);
+    if(!d)continue;
+    (by[d] ||= []).push(r);
+  }
+  return Object.keys(by).sort().map(d=>summaryObjectForDate(d,by[d]));
 }
 
-window.previewPastedLog=previewPastedLog;window.savePastedLog=savePastedLog;window.downloadEditableCsv=downloadEditableCsv;window.applyEditedCsv=applyEditedCsv;window.downloadDailySummaryCsv=downloadDailySummaryCsv;window.saveDailySummariesByDate=saveDailySummariesByDate;window.syncEditedCsvWithDeletion=syncEditedCsvWithDeletion;window.joinFamily=joinFamily;window.leaveFamily=leaveFamily;window.saveEntry=saveEntry;window.clearForm=clearForm;window.quickType=quickType;window.showScreen=showScreen;window.renderRecords=renderRecords;window.copySummary=copySummary;window.copyShareText=copyShareText;window.cleanupDuplicates=cleanupDuplicates;window.exportJSON=exportJSON;window.exportCSV=exportCSV;window.deleteEntry=deleteEntry;
+function summaryRowsToCsv(rows){
+  const headers=["날짜","기록수","식사","물","소변","대변","석션","네뷸","토닥이","구강청소","수동적ROM","체중","요약"];
+  return "\ufeff"+[headers,...rows.map(o=>headers.map(h=>o[h]??""))].map(r=>r.map(csvEscape).join(",")).join("\n");
+}
+
+function downloadDailySummaryCsv(){
+  const rows=dailySummaryRows();
+  if(!rows.length){alert("내보낼 날짜별 요약이 없습니다.");return;}
+  downloadText(`아버지_케어로그_날짜별요약_${localDateString()}.csv`,summaryRowsToCsv(rows),"text/csv;charset=utf-8");
+}
+
+function downloadTodaySummaryCsv(){
+  const today=todayRows();
+  if(!today.length){alert("오늘 기록이 없습니다.");return;}
+  const obj=summaryObjectForDate(localDateString(),today);
+  downloadText(`아버지_케어로그_오늘요약_${localDateString()}.csv`,summaryRowsToCsv([obj]),"text/csv;charset=utf-8");
+}
+
+async function saveTodaySummaryByDate(){
+  if(!roomPath){alert("먼저 가족코드로 입장하세요.");showScreen("join");return;}
+  const today=todayRows();
+  if(!today.length){alert("오늘 기록이 없습니다.");return;}
+  const d=localDateString();
+  const obj=summaryObjectForDate(d,today);
+  try{
+    await setDoc(doc(db,roomPath.replace("/records","/dailySummaries"),d),{...obj,updatedAt:serverTimestamp()},{merge:false});
+    alert("오늘 요약을 날짜 기준으로 저장/덮어쓰기 했습니다.");
+  }catch(e){alert("오늘 요약 저장 실패: "+e.message);}
+}
+
+async function saveDailySummariesByDate(){
+  if(!roomPath){alert("먼저 가족코드로 입장하세요.");showScreen("join");return;}
+  const rows=dailySummaryRows();
+  if(!rows.length){alert("저장할 요약이 없습니다.");return;}
+  if(!confirm(`${rows.length}일치 날짜별 요약을 저장/덮어쓰기 할까요?`))return;
+  try{
+    for(const o of rows){
+      await setDoc(doc(db,roomPath.replace("/records","/dailySummaries"),o.날짜),{...o,updatedAt:serverTimestamp()},{merge:false});
+    }
+    alert(`날짜별 요약 저장 완료: ${rows.length}일치`);
+  }catch(e){alert("날짜별 요약 저장 실패: "+e.message);}
+}
+
+
+window.previewPastedLog=previewPastedLog;window.savePastedLog=savePastedLog;window.downloadEditableCsv=downloadEditableCsv;window.applyEditedCsv=applyEditedCsv;window.downloadDailySummaryCsv=downloadDailySummaryCsv;window.saveDailySummariesByDate=saveDailySummariesByDate;window.syncEditedCsvWithDeletion=syncEditedCsvWithDeletion;window.downloadTodaySummaryCsv=downloadTodaySummaryCsv;window.saveTodaySummaryByDate=saveTodaySummaryByDate;window.joinFamily=joinFamily;window.leaveFamily=leaveFamily;window.saveEntry=saveEntry;window.clearForm=clearForm;window.quickType=quickType;window.showScreen=showScreen;window.renderRecords=renderRecords;window.copySummary=copySummary;window.copyShareText=copyShareText;window.cleanupDuplicates=cleanupDuplicates;window.exportJSON=exportJSON;window.exportCSV=exportCSV;window.deleteEntry=deleteEntry;
 document.getElementById("dt").value=nowLocalInputValue();
 initFirebase();
 </script>
