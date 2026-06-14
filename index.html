@@ -93,15 +93,19 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div class="card">
 <h2>로그 붙여넣기</h2>
 <div class="note">
-평소 쓰던 아버지 간병 로그를 그대로 붙여넣으면 줄 단위로 기록을 나눠 저장합니다. 날짜가 2일 이상 섞여 있으면 날짜별로 나눠 저장합니다.
+평소 쓰던 아버지 간병 로그를 그대로 붙여넣으면 줄 단위로 기록을 나눠 저장합니다. 날짜가 2일 이상 섞여 있으면 날짜별로 나눠 저장합니다. 예: 26.6/13 토, 26.6/14 일.
 시간, 혈압, SpO₂, HR, 체온, 식사량, 물, 소변, 대변, 위잔류량, HOB 등은 가능한 만큼 자동 추출하고, 원문은 메모에 남깁니다.
 </div>
 <label>붙여넣기 로그</label>
 <textarea id="pasteLog" style="min-height:180px" placeholder="예:
-10:30 보호자 병원 도착, 큰형과 교대. 아침 식사 후 식은땀 많았다고 함.
-11:15 SpO₂ 97 HR 82 BP 116/68 좌측위 HOB30
-12:00 식사 185mL + 물 200mL
-13:10 소변 80g, 대변 50g"></textarea>
+26.6/13 토
+03:00 석션
+03:20 소변 120g
+22:45 허리 수동 ROM
+
+26.6/14 일
+08:00 식사 330mL + 물 240mL
+13:10 대변 50g"></textarea>
 <div class="row">
 <button class="primary" onclick="savePastedLog()">붙여넣은 로그 저장</button>
 <button onclick="previewPastedLog()">미리보기</button>
@@ -376,10 +380,10 @@ function parseOneLogLine(line, baseDate){
   const original = line.trim();
   let dt = nowLocalInputValue();
 
-  const dateMatch = original.match(/(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/);
   let ymd = baseDate || localDateString();
-  if(dateMatch){
-    ymd = `${dateMatch[1]}-${pad(Number(dateMatch[2]))}-${pad(Number(dateMatch[3]))}`;
+  const parsedLineDate = parseDateFromText(original, null);
+  if(parsedLineDate){
+    ymd = parsedLineDate;
   }
 
   const timeMatch = original.match(/(?:^|\s|[,\[])(\d{1,2})[:시](\d{2})?/);
@@ -460,21 +464,56 @@ function parseOneLogLine(line, baseDate){
   };
 }
 
-function lineLooksLikeDateHeader(line){
-  const hasDate = /(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/.test(line);
-  const hasTime = /(?:^|\s|[,\[])(\d{1,2})[:시](\d{2})?/.test(line);
-  if(!hasDate || hasTime) return false;
 
-  // 날짜 제목/구분선은 기록으로 저장하지 않고, 이후 줄의 날짜 기준으로만 사용
-  if(/일차|월요일|화요일|수요일|목요일|금요일|토요일|일요일|\([월화수목금토일]\)|[-—–]/.test(line)) return true;
-  if(line.replace(/\s/g,"").length <= 25) return true;
-  return false;
+function normalizeYearToken(y){
+  if(!y) return new Date().getFullYear();
+  const n=Number(y);
+  if(n<100) return 2000+n;
+  return n;
 }
 
 function parseDateFromText(text, fallbackDate){
-  const m = text.match(/(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/);
-  if(!m) return fallbackDate || localDateString();
-  return `${m[1]}-${pad(Number(m[2]))}-${pad(Number(m[3]))}`;
+  // 지원 형식:
+  // 2026-06-14, 2026.6.14, 2026.6/14, 2026년 6월 14일
+  // 26.6/14 일, 26.6/13 토
+  // 6/14 일, 6.14 일
+  let m = text.match(/(?:^|\s)(\d{2,4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})(?:\s*일)?(?:\s*[월화수목금토일])?/);
+  if(m){
+    const y=normalizeYearToken(m[1]);
+    return `${y}-${pad(Number(m[2]))}-${pad(Number(m[3]))}`;
+  }
+
+  // 연도 없이 월/일만 있는 경우: 현재 연도로 보정
+  m = text.match(/(?:^|\s)(\d{1,2})\s*[.\/월]\s*(\d{1,2})(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s|$)/);
+  if(m){
+    const y=new Date().getFullYear();
+    return `${y}-${pad(Number(m[1]))}-${pad(Number(m[2]))}`;
+  }
+
+  return fallbackDate || null;
+}
+
+function lineLooksLikeDateHeader(line){
+  const trimmed=line.trim();
+  const parsed=parseDateFromText(trimmed,null);
+  if(!parsed) return false;
+
+  // 시간이 같이 있으면 일반 기록일 수 있으므로 날짜 헤더로 보지 않음
+  // 단, '26.6/14 일'의 '일'은 시간 아님.
+  const withoutDate = trimmed
+    .replace(/(?:^|\s)\d{2,4}\s*[.\-\/년]\s*\d{1,2}\s*[.\-\/월]\s*\d{1,2}(?:\s*일)?(?:\s*[월화수목금토일])?/g,'')
+    .replace(/(?:^|\s)\d{1,2}\s*[.\/월]\s*\d{1,2}(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s|$)/g,'')
+    .trim();
+
+  // 날짜 빼고 남는 말이 거의 없거나, 요일/일차/구분선 정도면 헤더
+  if(withoutDate === "") return true;
+  if(/^[\(\)\[\]\s\-—–·:]*$/.test(withoutDate)) return true;
+  if(/^(월|화|수|목|금|토|일|요일|\(?[월화수목금토일]\)?|일차|김포|서울대효|요양병원|병원|기록|로그|day|Day|\d+일차|[-—–·\s]+)$/i.test(withoutDate)) return true;
+
+  // '26.6/14 일'처럼 날짜+요일만 있는 짧은 줄은 헤더
+  if(trimmed.length <= 18 && /[월화수목금토일]\s*$/.test(trimmed)) return true;
+
+  return false;
 }
 
 function parsePastedLog(){
@@ -482,7 +521,31 @@ function parsePastedLog(){
   if(!text) return [];
 
   let currentDate = localDateString();
-  const firstDate = text.match(/(20\d{2})[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/);
+  const firstDate = parseDateFromText(text,null);
+  if(firstDate) currentDate = firstDate;
+
+  const rows = [];
+  const lines = text.split(/\n+/).map(s=>s.trim()).filter(Boolean);
+
+  for(const line of lines){
+    const lineDate = parseDateFromText(line,null);
+
+    if(lineLooksLikeDateHeader(line)){
+      currentDate = lineDate;
+      continue;
+    }
+
+    // 날짜와 시간이 같은 줄에 있으면 그 줄 자체 날짜를 사용
+    const baseForThisLine = lineDate || currentDate;
+    if(lineDate) currentDate = lineDate;
+
+    rows.push(parseOneLogLine(line, baseForThisLine));
+  }
+
+  return rows;
+}
+
+)[.\-\/년]\s*(\d{1,2})[.\-\/월]\s*(\d{1,2})/);
   if(firstDate) currentDate = `${firstDate[1]}-${pad(Number(firstDate[2]))}-${pad(Number(firstDate[3]))}`;
 
   const rows = [];
