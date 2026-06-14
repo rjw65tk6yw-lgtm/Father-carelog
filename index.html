@@ -467,6 +467,10 @@ function normalizeYearToken(y){
 
 function parseDateFromText(text, fallbackDate){
   const s=String(text||"").trim();
+  // 체중 산식 줄은 날짜로 오인하지 않음. 예: 체중 72.1 - 0.65 = 71.45 또는 체중 71.45 = 72.1 - 0.65
+  if(/(?:체중|몸무게|weight|WT)/i.test(s) && /[=+\-*/]/.test(s) && !/^\s*\d{2,4}\s*[.\-\/년]\s*\d{1,2}\s*[.\-\/월]\s*\d{1,2}/.test(s)) return fallbackDate || null;
+  // 체중 계산식 줄은 날짜로 오인하지 않음. 예: 체중 72.1 - 0.65 = 71.45
+  if(/(?:체중|몸무게|weight|WT)/i.test(s) && /=\s*\d{2,3}(?:[.,]\d+)?/.test(s) && !/^\s*\d{2,4}\s*[.\-\/년]\s*\d{1,2}\s*[.\-\/월]\s*\d{1,2}/.test(s)) return fallbackDate || null;
   // 체중/몸무게 줄은 날짜로 오인하지 않음
   if(/(?:체중|몸무게|weight|WT)\s*[:=]?\s*\d+(?:[.,]\d+)?\s*(?:kg|킬로)/i.test(s) && !/\d{1,4}\s*[.\-\/년]\s*\d{1,2}\s*[.\-\/월]\s*\d{1,2}/.test(s)) return fallbackDate || null;
   let m=s.match(/(?:^|\s)(\d{2,4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s*\d+일차)?/);
@@ -517,6 +521,59 @@ function actionTypesInText(text){
   return [...new Set(a)];
 }
 
+
+
+function safeEvalWeightExpression(expr){
+  const s=String(expr||"")
+    .replace(/,/g,".")
+    .replace(/kg|킬로|체중|몸무게|weight|WT|계산|결과/gi," ")
+    .replace(/[^\d+\-*/().\s]/g," ")
+    .trim();
+
+  if(!s || !/[0-9]/.test(s)) return null;
+  if(!/^[\d+\-*/().\s]+$/.test(s)) return null;
+
+  try{
+    const v=Function(`"use strict"; return (${s});`)();
+    if(Number.isFinite(v) && v>=20 && v<=200) return Math.round(v*100)/100;
+  }catch(e){}
+  return null;
+}
+
+function extractWeightFromText(text){
+  const s=String(text||"");
+  if(!/(체중|몸무게|weight|WT)/i.test(s)) return null;
+
+  if(s.includes("=")){
+    const parts=s.split("=");
+    const candidates=[];
+    for(const p of parts){
+      const v=safeEvalWeightExpression(p);
+      if(v!==null) candidates.push(v);
+    }
+    if(candidates.length){
+      for(const v of candidates){
+        if(candidates.every(x=>Math.abs(x-v)<0.05)) return v;
+      }
+      const scored=parts.map((p,i)=>({v:candidates[i], score:(p.match(/[+\-*/]/g)||[]).length})).filter(x=>x.v!==null);
+      scored.sort((a,b)=>b.score-a.score);
+      return scored[0].v;
+    }
+  }
+
+  const after=s.replace(/.*?(체중|몸무게|weight|WT)/i,"");
+  const calc=safeEvalWeightExpression(after);
+  if(calc!==null) return calc;
+
+  const kg=s.match(/(?:체중|몸무게|weight|WT)\s*[:=]?\s*(\d{2,3}(?:[.,]\d+)?)\s*(?:kg|킬로)/i);
+  if(kg){
+    const v=Number(kg[1].replace(",","."));
+    if(Number.isFinite(v) && v>=20 && v<=200) return Math.round(v*100)/100;
+  }
+
+  return null;
+}
+
 function parseOneLogLine(line, baseDate){
   const original=line.trim();
   let ymd=baseDate||localDateString();
@@ -541,7 +598,7 @@ function parseOneLogLine(line, baseDate){
   const hr=extractNumber(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i,original);
   const temp=extractNumber(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i,original);
   const oxygen=extractNumber(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i,original);
-  const weight=extractNumber(/(?:체중|몸무게|weight|WT)\s*[:=]?\s*(\d+(?:[.,]\d+)?)\s*(?:kg|킬로)?/i,original);
+  const weight=extractWeightFromText(original);
 
   let feed=null;
   const fm=original.match(/(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\d]{0,12}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)/i);
