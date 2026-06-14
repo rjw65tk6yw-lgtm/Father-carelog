@@ -21,6 +21,11 @@ button{border:0;border-radius:14px;padding:12px 14px;font-size:15px;font-weight:
 .box{white-space:pre-wrap;background:#f9fafb;border:1px solid var(--line);border-radius:14px;padding:12px;font-size:14px;line-height:1.55}.small{font-size:12px;color:var(--muted);line-height:1.45}.hide{display:none}
 nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);border-top:1px solid var(--line);padding:10px 12px calc(10px + env(safe-area-inset-bottom));display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}.tab.active{background:var(--primary);color:#fff}
 @media(max-width:430px){.grid{grid-template-columns:1fr 1fr}.tab{font-size:13px;padding:10px 6px}}
+
+.posGuide{font-size:13px;line-height:1.45;background:#0f172a;border:1px solid #334155;border-radius:12px;padding:10px;margin-top:8px;color:#dbeafe}
+.posGuide b{color:#fff}
+.posGuide .en{color:#93c5fd}
+
 </style>
 </head>
 <body>
@@ -80,7 +85,26 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div><label>소변 g/mL</label><input id="urine" inputmode="decimal"></div>
 <div><label>대변 g</label><input id="stool" inputmode="decimal"></div>
 <div><label>HOB 각도</label><input id="hob" inputmode="decimal"></div>
-<div><label>체위</label><select id="position"><option value="">선택 안 함</option><option>좌측위</option><option>우측위</option><option>정상위/앙와위</option><option>상체거상</option><option>휠체어</option></select></div>
+<div><label>체위</label><select id="position"><option value="">선택 안 함</option><option>좌측위</option><option>우측위</option><option>정상위/앙와위</option><option>상체거상</option><option>휠체어</option></select>
+
+<label>체위 상세</label>
+<select id="positionDetail" onchange="updatePositionGuide()">
+
+<option value="">선택 안 함</option>
+<option value="앙와위 / Supine">앙와위 / Supine — 바로 누운 자세</option>
+<option value="파울러 / Fowler’s">파울러 / Fowler’s — 상체 30~45도 이상 올림</option>
+<option value="기좌호흡위 / Orthopneic">기좌호흡위 / Orthopneic — 앉아서 앞으로 기대는 자세</option>
+<option value="복와위 / Prone">복와위 / Prone — 엎드린 자세</option>
+<option value="측위 / Lateral">측위 / Lateral — 옆으로 누운 자세</option>
+<option value="심스위 / Sims’">심스위 / Sims’ — 반엎드린 측위</option>
+<option value="쇄석위 / Lithotomy">쇄석위 / Lithotomy — 다리 올린 검사 자세</option>
+<option value="트렌델렌버그 / Trendelenburg">트렌델렌버그 / Trendelenburg — 머리 낮고 다리 높은 자세</option>
+<option value="역트렌델렌버그 / Reverse Trendelenburg">역트렌델렌버그 / Reverse Trendelenburg — 머리 높고 다리 낮은 자세</option>
+<option value="슬흉위 / Knee-chest">슬흉위 / Knee-chest — 무릎-가슴 자세</option>
+
+</select>
+<div id="positionGuide" class="posGuide">체위 상세를 선택하면 간단 설명이 여기에 표시됩니다.</div>
+</div>
 <div><label>호흡/가래</label><select id="breath"><option value="">선택 안 함</option><option>깨끗함</option><option>그르렁 있음</option><option>기침 있음</option><option>깊은 석션 필요</option><option>SpO₂ 불안정</option></select></div>
 </div>
 <label>상세 메모</label><textarea id="memo" placeholder="예: 좌측위 HOB30, SpO₂ 95~96, 깊은 석션 1회"></textarea>
@@ -253,7 +277,7 @@ function collectEntry(){
     dt:val("dt")||nowLocalInputValue(),type:val("type"),
     spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),sbp:num("sbp"),dbp:num("dbp"),
     feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),
-    position:val("position"),breath:val("breath"),memo:val("memo"),
+    position:val("position"),positionDetail:val("positionDetail"),positionDetail:val("positionDetail"),breath:val("breath"),memo:val("memo"),
     authorName:currentAuthor||val("authorName")||"가족",familyCode:currentCode,createdAt:serverTimestamp(),updatedAt:serverTimestamp()
   }
 }
@@ -351,6 +375,48 @@ function showScreen(name){
 
 function countRecordsByTypeForDate(records, ymd, typeName){
   return records.filter(r => (r.dt || "").slice(0,10) === ymd && r.type === typeName).length;
+}
+
+
+const POSITION_GUIDES={
+  "앙와위 / Supine":"바로 누운 자세. 얼굴은 위, 등은 침대에 닿음. 네 로그의 정상위와 거의 같은 의미.",
+  "파울러 / Fowler’s":"상체를 올린 자세. 보통 low Fowler 15~30도, semi-Fowler 30~45도, high Fowler는 더 세움. 호흡 보조에 자주 사용.",
+  "기좌호흡위 / Orthopneic":"앉아서 앞으로 기대는 자세. 호흡곤란이 심할 때 흉곽 확장을 돕는 자세.",
+  "복와위 / Prone":"엎드린 자세. 척추·호흡·튜브 상태에 따라 제한될 수 있어 아버지에게는 의료진 지시 없이는 신중.",
+  "측위 / Lateral":"옆으로 누운 자세. 좌측위·우측위가 여기에 해당. 천골 압박 완화와 체위변경에 사용.",
+  "심스위 / Sims’":"반엎드린 측위. 배액과 흡인 예방 목적에서 쓰일 수 있으나 튜브·욕창 위치 확인 필요.",
+  "쇄석위 / Lithotomy":"다리를 올린 검사 자세. 일반 간병 체위로는 거의 쓰지 않음.",
+  "트렌델렌버그 / Trendelenburg":"머리를 낮추고 다리를 높이는 자세. 저혈압·정맥환류 목적으로 언급되지만, 호흡/흡인 위험 때문에 의료진 지시 없이 적용하지 않는 편이 안전.",
+  "역트렌델렌버그 / Reverse Trendelenburg":"머리를 높이고 다리를 낮추는 자세. 위식도역류·흡인 위험 완화 목적에서 쓰이기도 함.",
+  "슬흉위 / Knee-chest":"무릎-가슴 자세. 일반적인 아버지 간병 체위로는 부적합할 가능성이 큼."
+};
+
+
+function positionDetailText(r){
+  return r.positionDetail ? ` / 체위상세 ${r.positionDetail}` : "";
+}
+
+function updatePositionGuide(){
+  const v=val("positionDetail");
+  const el=document.getElementById("positionGuide");
+  if(!el) return;
+  if(!v){el.textContent="체위 상세를 선택하면 간단 설명이 여기에 표시됩니다.";return;}
+  el.innerHTML=`<b>${v}</b><br>${POSITION_GUIDES[v]||""}`;
+}
+
+function inferPositionDetail(text){
+  const s=String(text||"");
+  if(/앙와위|supine|dorsal recumbent|정상위/i.test(s)) return "앙와위 / Supine";
+  if(/fowler|파울러|semi[-\s]?fowler|low[-\s]?fowler|high[-\s]?fowler/i.test(s)) return "파울러 / Fowler’s";
+  if(/orthopneic|기좌호흡|tripod/i.test(s)) return "기좌호흡위 / Orthopneic";
+  if(/prone|복와위|엎드/i.test(s)) return "복와위 / Prone";
+  if(/lateral|측위|좌측위|우측위|side[-\s]?lying/i.test(s)) return "측위 / Lateral";
+  if(/sims|심스/i.test(s)) return "심스위 / Sims’";
+  if(/lithotomy|쇄석/i.test(s)) return "쇄석위 / Lithotomy";
+  if(/reverse\s*trendelenburg|역트렌델렌버그/i.test(s)) return "역트렌델렌버그 / Reverse Trendelenburg";
+  if(/trendelenburg|트렌델렌버그/i.test(s)) return "트렌델렌버그 / Trendelenburg";
+  if(/knee[-\s]?chest|슬흉/i.test(s)) return "슬흉위 / Knee-chest";
+  return "";
 }
 
 function inferTypeFromText(text){
@@ -515,6 +581,8 @@ function parseOneLogLine(line, baseDate){
   else if(/휠체어/.test(original)) position = "휠체어";
   else if(/상체거상/.test(original)) position = "상체거상";
 
+  const positionDetail = inferPositionDetail(original);
+
   let breath = "";
   if(/그르렁/.test(original)) breath = "그르렁 있음";
   else if(/기침/.test(original)) breath = "기침 있음";
@@ -526,7 +594,7 @@ function parseOneLogLine(line, baseDate){
     dt, type: inferTypeFromText(original),
     spo2, hr, temp, oxygen, sbp, dbp,
     feed, water, residual, urine, stool, hob,
-    position, breath,
+    position, positionDetail, breath,
     memo: original,
     authorName: currentAuthor||val("authorName")||"가족",
     familyCode: currentCode,
