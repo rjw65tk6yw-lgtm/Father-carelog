@@ -119,7 +119,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div class="card" id="pasteLogCard">
   <h2>로그 붙여넣기</h2>
   <div class="note">
-    네가 평소 쓰는 형식 그대로 붙여넣으면 됩니다. 날짜 헤더와 ㅇ시간 기록을 기준으로 나눠 저장합니다. 이미 저장된 같은 날짜·시간·종류·핵심수치 기록은 중복으로 보고 자동으로 건너뜁니다. 네뷸·토닥이·석션·구강청소가 한 줄에 있으면 각각 분리해 카운트합니다.
+    네가 평소 쓰는 형식 그대로 붙여넣으면 됩니다. 날짜 헤더와 ㅇ시간 기록을 기준으로 나눠 저장합니다.
     예: <b>2026.6/14 일 320일차</b>, <b>2026.6/13 토 319일차</b>
   </div>
   <label>붙여넣기 로그</label>
@@ -166,6 +166,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <div class="row">
 <button class="primary" onclick="exportJSON()">JSON 백업</button>
 <button onclick="exportCSV()">CSV 내보내기</button>
+<button class="danger" onclick="cleanupDuplicates()">중복 기록 정리</button>
 </div>
 </div>
 <div class="card">
@@ -186,7 +187,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
-import { getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { getFirestore, collection, addDoc, setDoc, deleteDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 
 /*
 Firebase Console → 프로젝트 설정 → 일반 → 내 앱 → SDK 설정 및 구성의 firebaseConfig로 교체하세요.
@@ -278,7 +279,7 @@ function collectEntry(){
     dt:val("dt")||nowLocalInputValue(),type:val("type"),
     spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),sbp:num("sbp"),dbp:num("dbp"),
     feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),
-    position:val("position"),positionDetail:val("positionDetail"),positionDetail:val("positionDetail"),breath:val("breath"),memo:val("memo"),
+    position:val("position"),positionDetail:val("positionDetail"),breath:val("breath"),memo:val("memo"),
     authorName:currentAuthor||val("authorName")||"가족",familyCode:currentCode,createdAt:serverTimestamp(),updatedAt:serverTimestamp()
   }
 }
@@ -449,62 +450,40 @@ function extractNumber(pattern, text){
 
 
 
+
 function normalizeYearToken(y){
   if(!y) return new Date().getFullYear();
   const n=Number(y);
-  if(n<100) return 2000+n;
-  return n;
+  return n<100 ? 2000+n : n;
 }
 
 function parseDateFromText(text, fallbackDate){
   const s=String(text||"").trim();
-
-  // 2026.6/14 일 320일차, 2026.6/13 토 319일차, 26.6/14 일
   let m=s.match(/(?:^|\s)(\d{2,4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s*\d+일차)?/);
-  if(m){
-    const y=normalizeYearToken(m[1]);
-    return `${y}-${pad(Number(m[2]))}-${pad(Number(m[3]))}`;
-  }
-
-  // 6/14 일, 다음날 6/14 일 06:00
+  if(m) return `${normalizeYearToken(m[1])}-${pad(Number(m[2]))}-${pad(Number(m[3]))}`;
   m=s.match(/(?:^|\s|다음날\s*)(\d{1,2})\s*[.\/월]\s*(\d{1,2})(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s|$)/);
-  if(m){
-    const y=new Date().getFullYear();
-    return `${y}-${pad(Number(m[1]))}-${pad(Number(m[2]))}`;
-  }
-
+  if(m) return `${new Date().getFullYear()}-${pad(Number(m[1]))}-${pad(Number(m[2]))}`;
   return fallbackDate || null;
 }
 
 function lineLooksLikeDateHeader(line){
   const s=String(line||"").trim();
-  if(!s) return false;
-  const d=parseDateFromText(s,null);
-  if(!d) return false;
-
-  // ㅇ10:30 같은 기록 줄은 헤더 아님
+  if(!s || !parseDateFromText(s,null)) return false;
   if(/^[ㅇoO]?\s*\d{1,2}\s*[:시]/.test(s)) return false;
-
-  // 기간 기록은 헤더 아님: 19:00~다음날 6/14 일 06:00까지 소변 570g
   if(/까지|부터|~/.test(s) && /(소변|대변|식사|물|석션|네뷸|토닥|혈압|산소|심박|체온)/.test(s)) return false;
-
   const rest=s
     .replace(/(?:^|\s)\d{2,4}\s*[.\-\/년]\s*\d{1,2}\s*[.\-\/월]\s*\d{1,2}(?:\s*일)?(?:\s*[월화수목금토일])?(?:\s*\d+일차)?/g,"")
     .replace(/(?:^|\s)\d{1,2}\s*[.\/월]\s*\d{1,2}(?:\s*일)?(?:\s*[월화수목금토일])?/g,"")
     .trim();
-
   if(rest==="") return true;
   if(/^[\s\(\)\[\]\-—–·:]*$/.test(rest)) return true;
   if(/^(월|화|수|목|금|토|일|요일|\(?[월화수목금토일]\)?|\d+일차|일차|김포|서울대효|요양병원|병원|기록|로그|day|Day).*$/i.test(rest)) return true;
-
   return s.length<=30 && /[월화수목금토일](\s*\d+일차)?\s*$/.test(s);
 }
 
 function isNewEventLine(line){
   const s=String(line||"").trim();
-  if(/^[ㅇoO]\s*\d{1,2}\s*[:시]/.test(s)) return true;
-  if(/^\d{1,2}\s*[:시]\s*\d{0,2}/.test(s)) return true;
-  return false;
+  return /^[ㅇoO]\s*\d{1,2}\s*[:시]/.test(s) || /^\d{1,2}\s*[:시]\s*\d{0,2}/.test(s);
 }
 
 function cleanEventLine(line){
@@ -513,109 +492,89 @@ function cleanEventLine(line){
 
 function parseTimeFromLine(line){
   const s=cleanEventLine(line);
-  let m=s.match(/^(\d{1,2})\s*[:시]\s*(\d{2})?/);
-  if(!m) return null;
-  return {hh:pad(Number(m[1])), mm:pad(Number(m[2]||0))};
+  const m=s.match(/^(\d{1,2})\s*[:시]\s*(\d{2})?/);
+  return m ? {hh:pad(Number(m[1])), mm:pad(Number(m[2]||0))} : null;
 }
-
-function parseOneLogLine(line, baseDate){
-  const original = line.trim();
-  let ymd = baseDate || localDateString();
-  const parsedLineDate = parseDateFromText(original, null);
-  if(parsedLineDate && !/다음날/.test(original)){
-    ymd = parsedLineDate;
-  }
-
-  let dt = `${ymd}T${nowLocalInputValue().slice(11,16)}`;
-  const t=parseTimeFromLine(original);
-  if(t){
-    dt = `${ymd}T${t.hh}:${t.mm}`;
-  }else{
-    const timeMatch = original.match(/(?:^|\s|[,\[])(\d{1,2})[:시](\d{2})?/);
-    if(timeMatch){
-      dt = `${ymd}T${pad(Number(timeMatch[1]))}:${pad(Number(timeMatch[2] || 0))}`;
-    }
-  }
-
-  let sbp=null, dbp=null;
-  const bpMatch = original.match(/(?:BP|혈압)?\s*(\d{2,3})\s*\/\s*(\d{2,3})/i);
-  if(bpMatch){ sbp=Number(bpMatch[1]); dbp=Number(bpMatch[2]); }
-
-  let spo2 = null;
-  const spoMatch = original.match(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})(?:\s*[~\-]\s*(\d{2,3}))?/i);
-  if(spoMatch) spo2 = Number(spoMatch[2] || spoMatch[1]);
-
-  const hr = extractNumber(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i, original);
-  const temp = extractNumber(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i, original);
-  const oxygen = extractNumber(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i, original);
-
-  let feed = null;
-  const feedMatch = original.match(/(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\d]{0,12}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)/i);
-  if(feedMatch) feed = Number(feedMatch[1].replace(",", "."));
-
-  let water = null;
-  const waterMatch = original.match(/(?:물|수분)[^\d]{0,12}(?:약\s*)?(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)/i);
-  if(waterMatch) water = Number(waterMatch[1].replace(",", "."));
-
-  let residual = null;
-  const residualMatch = original.match(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,8}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)?/i);
-  if(residualMatch) residual = Number(residualMatch[1].replace(",", "."));
-
-  let urine = null;
-  const urineMatch = original.match(/소변[^\d]{0,16}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
-  if(urineMatch) urine = Number(urineMatch[1].replace(",", "."));
-
-  let stool = null;
-  const stoolMatch1 = original.match(/대변[^\d]{0,16}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
-  if(stoolMatch1){
-    stool = Number(stoolMatch1[1].replace(",", "."));
-  } else {
-    const stoolMatch2 = original.match(/(?:^|[^소대])변[^\d]{0,16}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
-    if(stoolMatch2) stool = Number(stoolMatch2[1].replace(",", "."));
-  }
-
-  const hob = extractNumber(/HOB\s*[:=]?\s*(\d{1,2})/i, original);
-
-  let position = "";
-  if(/좌측위/.test(original)) position = "좌측위";
-  else if(/우측위/.test(original)) position = "우측위";
-  else if(/정상위|앙와위/.test(original)) position = "정상위/앙와위";
-  else if(/휠체어/.test(original)) position = "휠체어";
-  else if(/상체거상/.test(original)) position = "상체거상";
-
-  const positionDetail = inferPositionDetail(original);
-
-  let breath = "";
-  if(/그르렁/.test(original)) breath = "그르렁 있음";
-  else if(/기침/.test(original)) breath = "기침 있음";
-  else if(/깊은 석션/.test(original)) breath = "깊은 석션 필요";
-  else if(/불안정|하락|떨어/.test(original) && /SpO|산소포화도/.test(original)) breath = "SpO₂ 불안정";
-  else if(/깨끗|양호/.test(original)) breath = "깨끗함";
-
-  return {
-    dt, type: inferTypeFromText(original),
-    spo2, hr, temp, oxygen, sbp, dbp,
-    feed, water, residual, urine, stool, hob,
-    position, positionDetail, breath,
-    memo: original,
-    authorName: currentAuthor||val("authorName")||"가족",
-    familyCode: currentCode,
-    pasted: true,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp()
-  };
-}
-
 
 function actionTypesInText(text){
   const s=String(text||"");
-  const arr=[];
-  if(/네뷸|nebul/i.test(s)) arr.push("네뷸");
-  if(/토닥|vest|커프/i.test(s)) arr.push("토닥이");
-  if(/석션|suction/i.test(s)) arr.push("석션");
-  if(/구강청소|구강\s*청소|입안청소|입안\s*청소|oral\s*care|mouth\s*care/i.test(s)) arr.push("구강청소");
-  if(/수동적\s*ROM|수동\s*ROM|ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(s)) arr.push("수동적 ROM");
-  return [...new Set(arr)];
+  const a=[];
+  if(/네뷸|nebul/i.test(s)) a.push("네뷸");
+  if(/토닥|vest|커프/i.test(s)) a.push("토닥이");
+  if(/석션|suction/i.test(s)) a.push("석션");
+  if(/구강청소|구강\s*청소|입안청소|입안\s*청소|oral\s*care|mouth\s*care/i.test(s)) a.push("구강청소");
+  if(/수동적\s*ROM|수동\s*ROM|ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(s)) a.push("수동적 ROM");
+  return [...new Set(a)];
+}
+
+function parseOneLogLine(line, baseDate){
+  const original=line.trim();
+  let ymd=baseDate||localDateString();
+  const parsedLineDate=parseDateFromText(original,null);
+  if(parsedLineDate && !/다음날/.test(original)) ymd=parsedLineDate;
+
+  const t=parseTimeFromLine(original);
+  let dt=t ? `${ymd}T${t.hh}:${t.mm}` : `${ymd}T${nowLocalInputValue().slice(11,16)}`;
+  if(!t){
+    const tm=original.match(/(?:^|\s|[,\[])(\d{1,2})[:시](\d{2})?/);
+    if(tm) dt=`${ymd}T${pad(Number(tm[1]))}:${pad(Number(tm[2]||0))}`;
+  }
+
+  let sbp=null,dbp=null;
+  const bp=original.match(/(?:BP|혈압)?\s*(\d{2,3})\s*\/\s*(\d{2,3})/i);
+  if(bp){sbp=Number(bp[1]);dbp=Number(bp[2]);}
+
+  let spo2=null;
+  const sp=original.match(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})(?:\s*[~\-]\s*(\d{2,3}))?/i);
+  if(sp) spo2=Number(sp[2]||sp[1]);
+
+  const hr=extractNumber(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i,original);
+  const temp=extractNumber(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i,original);
+  const oxygen=extractNumber(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i,original);
+
+  let feed=null;
+  const fm=original.match(/(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\d]{0,12}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)/i);
+  if(fm) feed=Number(fm[1].replace(",","."));
+
+  let water=null;
+  const wm=original.match(/(?:물|수분)[^\d]{0,12}(?:약\s*)?(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)/i);
+  if(wm) water=Number(wm[1].replace(",","."));
+
+  let residual=null;
+  const rm=original.match(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,8}(\d+(?:[.,]\d)?)\s*(?:mL|ml|cc)?/i);
+  if(rm) residual=Number(rm[1].replace(",","."));
+
+  let urine=null;
+  const um=original.match(/소변[^\d]{0,16}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
+  if(um) urine=Number(um[1].replace(",","."));
+
+  let stool=null;
+  const sm1=original.match(/대변[^\d]{0,16}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
+  if(sm1) stool=Number(sm1[1].replace(",","."));
+  else{
+    const sm2=original.match(/(?:^|[^소대])변[^\d]{0,16}(\d+(?:[.,]\d)?)\s*(?:g|mL|ml|cc)?/i);
+    if(sm2) stool=Number(sm2[1].replace(",","."));
+  }
+
+  const hob=extractNumber(/HOB\s*[:=]?\s*(\d{1,2})/i,original);
+
+  let position="";
+  if(/좌측위/.test(original)) position="좌측위";
+  else if(/우측위/.test(original)) position="우측위";
+  else if(/정상위|앙와위/.test(original)) position="정상위/앙와위";
+  else if(/휠체어/.test(original)) position="휠체어";
+  else if(/상체거상/.test(original)) position="상체거상";
+
+  const positionDetail=(typeof inferPositionDetail==="function") ? inferPositionDetail(original) : "";
+
+  let breath="";
+  if(/그르렁/.test(original)) breath="그르렁 있음";
+  else if(/기침/.test(original)) breath="기침 있음";
+  else if(/깊은 석션/.test(original)) breath="깊은 석션 필요";
+  else if(/불안정|하락|떨어/.test(original) && /SpO|산소포화도/.test(original)) breath="SpO₂ 불안정";
+  else if(/깨끗|양호/.test(original)) breath="깨끗함";
+
+  return {dt,type:inferTypeFromText(original),spo2,hr,temp,oxygen,sbp,dbp,feed,water,residual,urine,stool,hob,position,positionDetail,breath,memo:original,authorName:currentAuthor||val("authorName")||"가족",familyCode:currentCode,pasted:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
 }
 
 function expandCompoundRecords(record){
@@ -627,46 +586,80 @@ function expandCompoundRecords(record){
 }
 
 function parsePastedLog(){
-  const text = document.getElementById("pasteLog").value.trim();
+  const text=document.getElementById("pasteLog").value.trim();
   if(!text) return [];
-
-  let currentDate = localDateString();
-  const rows = [];
-  const lines = text.split(/\n/).map(s=>s.trim()).filter(Boolean);
-  let pending = null;
+  let currentDate=localDateString();
+  const rows=[];
+  const lines=text.split(/\n/).map(s=>s.trim()).filter(Boolean);
+  let pending=null;
 
   function flushPending(){
     if(pending){
-      rows.push(...expandCompoundRecords(parseOneLogLine(pending.text, pending.date)));
-      pending = null;
+      rows.push(...expandCompoundRecords(parseOneLogLine(pending.text,pending.date)));
+      pending=null;
     }
   }
 
-  for(const rawLine of lines){
-    const line = rawLine.trim();
-    if(!line) continue;
-
+  for(const line of lines){
     if(lineLooksLikeDateHeader(line)){
       flushPending();
-      currentDate = parseDateFromText(line, currentDate) || currentDate;
+      currentDate=parseDateFromText(line,currentDate)||currentDate;
       continue;
     }
-
     if(isNewEventLine(line)){
       flushPending();
-      pending = {date: currentDate, text: cleanEventLine(line)};
+      pending={date:currentDate,text:cleanEventLine(line)};
       continue;
     }
-
-    if(pending){
-      pending.text += "\n" + line;
-    }else{
-      pending = {date: currentDate, text: line};
-    }
+    if(pending) pending.text+="\n"+line;
+    else pending={date:currentDate,text:line};
   }
-
   flushPending();
   return rows;
+}
+
+function normalizeForKey(s){
+  return String(s||"").replace(/\s+/g," ").replace(/[，、]/g,",").replace(/\[자동분리:\s*(네뷸|토닥이|석션|구강청소|수동적 ROM)\]/g,"").trim();
+}
+
+function hashString(s){
+  let h=2166136261;
+  for(let i=0;i<s.length;i++){
+    h^=s.charCodeAt(i);
+    h=Math.imul(h,16777619);
+  }
+  return (h>>>0).toString(16);
+}
+
+function stableRecordKey(r){
+  const dt=r.dt||"";
+  const type=r.type||"";
+  const parts=[dt,type];
+
+  if(r.urine!==null&&r.urine!==undefined&&r.urine!=="") parts.push(`urine:${r.urine}`);
+  if(r.stool!==null&&r.stool!==undefined&&r.stool!=="") parts.push(`stool:${r.stool}`);
+  if(r.feed!==null&&r.feed!==undefined&&r.feed!=="") parts.push(`feed:${r.feed}`);
+  if(r.water!==null&&r.water!==undefined&&r.water!=="") parts.push(`water:${r.water}`);
+  if(r.residual!==null&&r.residual!==undefined&&r.residual!=="") parts.push(`residual:${r.residual}`);
+
+  if(["네뷸","토닥이","석션","구강청소","수동적 ROM"].includes(type)) parts.push(`action:${type}`);
+
+  if(parts.length===2) parts.push(normalizeForKey(r.memo||""));
+  return parts.join("__");
+}
+
+function stableDocId(r){
+  return "r_"+hashString(stableRecordKey(r));
+}
+
+function duplicateGroups(){
+  const groups=new Map();
+  for(const r of (allRows||[])){
+    const k=stableRecordKey(r);
+    if(!groups.has(k)) groups.set(k,[]);
+    groups.get(k).push(r);
+  }
+  return [...groups.values()].filter(g=>g.length>1);
 }
 
 
@@ -687,136 +680,68 @@ function previewPastedLog(){
     if(r.urine!==null)parts.push(`소변 ${r.urine}`);
     if(r.stool!==null)parts.push(`대변 ${r.stool}`);
     if(r.residual!==null)parts.push(`잔류 ${r.residual}`);
-    const dup=isDuplicateRecord(r) ? " [중복 예정: 저장 안 함]" : ""; return `${i+1}. ${formatTime(r.dt)} [${r.type}]${dup} ${parts.join(" / ")}\n   ${r.memo}`;
+    return `${i+1}. ${formatTime(r.dt)} [${r.type}] ${parts.join(" / ")}\n   ${r.memo}\n   key: ${stableDocId(r)}`;
   }).join("\n\n");
-}
-
-
-else{
-      seenInPaste.add(key);
-      unique.push(r);
-    }
-  }
-
-  return {unique, skipped};
-}
-
-
-
-function normalizeForDuplicate(s){
-  return String(s||"")
-    .replace(/\s+/g," ")
-    .replace(/[，、]/g,",")
-    .replace(/\[자동분리:\s*(네뷸|토닥이|석션|구강청소|수동적 ROM)\]/g,"")
-    .trim();
-}
-
-function measurableSignature(r){
-  const parts=[];
-  if(r.urine!==null && r.urine!==undefined && r.urine!=="") parts.push(`urine:${r.urine}`);
-  if(r.stool!==null && r.stool!==undefined && r.stool!=="") parts.push(`stool:${r.stool}`);
-  if(r.feed!==null && r.feed!==undefined && r.feed!=="") parts.push(`feed:${r.feed}`);
-  if(r.water!==null && r.water!==undefined && r.water!=="") parts.push(`water:${r.water}`);
-  if(r.residual!==null && r.residual!==undefined && r.residual!=="") parts.push(`residual:${r.residual}`);
-  if(r.spo2!==null && r.spo2!==undefined && r.spo2!=="") parts.push(`spo2:${r.spo2}`);
-  if(r.hr!==null && r.hr!==undefined && r.hr!=="") parts.push(`hr:${r.hr}`);
-  if(r.sbp!==null && r.sbp!==undefined && r.sbp!=="") parts.push(`bp:${r.sbp}/${r.dbp??""}`);
-  if(r.temp!==null && r.temp!==undefined && r.temp!=="") parts.push(`temp:${r.temp}`);
-  if(r.hob!==null && r.hob!==undefined && r.hob!=="") parts.push(`hob:${r.hob}`);
-  return parts.join("|");
-}
-
-function alternateDuplicateKeys(r){
-  const keys = new Set();
-  const dt = r.dt || "";
-  const date = dt.slice(0,10);
-  const time = dt.slice(11,16);
-  const type = r.type || "";
-  const memo = normalizeForDuplicate(r.memo || "");
-  const sig = measurableSignature(r);
-
-  keys.add(`${dt}__${type}__${sig || memo}`);
-  keys.add(`${dt}__${type}__${memo}`);
-
-  if(r.urine!==null && r.urine!==undefined && r.urine!=="") { keys.add(`${dt}__urine__${r.urine}`); keys.add(`${date}__${time}__urine__${r.urine}`); }
-  if(r.stool!==null && r.stool!==undefined && r.stool!=="") { keys.add(`${dt}__stool__${r.stool}`); keys.add(`${date}__${time}__stool__${r.stool}`); }
-  if(r.feed!==null && r.feed!==undefined && r.feed!=="") keys.add(`${dt}__feed__${r.feed}`);
-  if(r.water!==null && r.water!==undefined && r.water!=="") keys.add(`${dt}__water__${r.water}`);
-  if(r.residual!==null && r.residual!==undefined && r.residual!=="") keys.add(`${dt}__residual__${r.residual}`);
-
-  if(["네뷸","토닥이","석션","구강청소","수동적 ROM"].includes(type)) {
-    keys.add(`${dt}__action__${type}`);
-    keys.add(`${date}__${time}__action__${type}`);
-  }
-  return [...keys];
-}
-
-function existingDuplicateKeySet(){
-  const set = new Set();
-  for(const r of (records || [])){
-    for(const k of alternateDuplicateKeys(r)) set.add(k);
-  }
-  return set;
-}
-
-function isDuplicateRecord(candidate){
-  const existing = existingDuplicateKeySet();
-  return alternateDuplicateKeys(candidate).some(k => existing.has(k));
-}
-
-function removeDuplicateCandidates(candidates){
-  const existingKeys = existingDuplicateKeySet();
-  const seenInPaste = new Set();
-  const unique = [];
-  const skipped = [];
-  for(const r of candidates){
-    const keys = alternateDuplicateKeys(r);
-    const dup = keys.some(k => existingKeys.has(k) || seenInPaste.has(k));
-    if(dup) skipped.push(r);
-    else { keys.forEach(k => seenInPaste.add(k)); unique.push(r); }
-  }
-  return {unique, skipped};
 }
 
 
 async function savePastedLog(){
   if(!roomPath){alert("먼저 가족코드로 입장하세요.");showScreen("join");return;}
-  const parsedRows = parsePastedLog();
-  if(!parsedRows.length){alert("붙여넣은 로그가 없습니다.");return;}
-
-  const result = removeDuplicateCandidates(parsedRows);
-  const rows = result.unique;
-  const skipped = result.skipped;
-
-  if(!rows.length){
-    alert(`새로 저장할 기록이 없습니다.
-이미 저장된 중복 기록 ${skipped.length}개를 건너뛰었습니다.`);
-    previewPastedLog();
-    return;
-  }
-
-  const msg = skipped.length
-    ? `${parsedRows.length}개 후보 중 새 기록 ${rows.length}개만 저장합니다.
-중복 ${skipped.length}개는 건너뜁니다.`
-    : `${rows.length}개 기록을 저장할까요?`;
-  if(!confirm(msg)) return;
+  const rows=parsePastedLog();
+  if(!rows.length){alert("붙여넣은 로그가 없습니다.");return;}
+  if(!confirm(`${rows.length}개 후보 기록을 저장합니다.\n같은 날짜·시간·종류·핵심값은 새로 만들지 않고 덮어씁니다.`)) return;
 
   try{
-    for(const r of rows){ await addDoc(collection(db,roomPath),r); }
+    const used=new Set();
+    let saved=0, overwritten=0, inPasteDup=0;
+
+    for(const r of rows){
+      let id=stableDocId(r);
+      if(used.has(id)){
+        inPasteDup++;
+        continue;
+      }
+      used.add(id);
+
+      const exists=allRows.some(x=>x.id===id);
+      await setDoc(doc(db,roomPath,id),{...r,updatedAt:serverTimestamp()},{merge:true});
+      if(exists) overwritten++;
+      else saved++;
+    }
+
     document.getElementById("pasteLog").value="";
-    document.getElementById("pastePreview").textContent=`저장 완료: 새 기록 ${rows.length}개, 중복 건너뜀 ${skipped.length}개`;
+    document.getElementById("pastePreview").textContent=`저장 완료: 새 기록 ${saved}개, 덮어쓰기 ${overwritten}개, 붙여넣기 내부 중복 ${inPasteDup}개`;
     showScreen("records");
-    alert(`저장 완료
-새 기록: ${rows.length}개
-중복 건너뜀: ${skipped.length}개`);
+    alert(`저장 완료\n새 기록: ${saved}개\n덮어쓰기: ${overwritten}개\n붙여넣기 내부 중복: ${inPasteDup}개`);
   }catch(e){
     alert("붙여넣기 저장 실패: "+e.message);
   }
 }
 
+async function cleanupDuplicates(){
+  if(!roomPath){alert("먼저 가족코드로 입장하세요.");showScreen("join");return;}
+  const groups=duplicateGroups();
+  if(!groups.length){alert("정리할 중복 기록이 없습니다.");return;}
 
+  let deleteTargets=[];
+  for(const g of groups){
+    const sorted=[...g].sort((a,b)=>(a.updatedAt?.seconds||a.createdAt?.seconds||0)-(b.updatedAt?.seconds||b.createdAt?.seconds||0));
+    deleteTargets.push(...sorted.slice(0,-1));
+  }
 
-window.previewPastedLog=previewPastedLog;window.savePastedLog=savePastedLog;window.joinFamily=joinFamily;window.leaveFamily=leaveFamily;window.saveEntry=saveEntry;window.clearForm=clearForm;window.quickType=quickType;window.showScreen=showScreen;window.renderRecords=renderRecords;window.copySummary=copySummary;window.copyShareText=copyShareText;window.exportJSON=exportJSON;window.exportCSV=exportCSV;window.deleteEntry=deleteEntry;
+  if(!confirm(`중복 그룹 ${groups.length}개에서 오래된 중복 기록 ${deleteTargets.length}개를 삭제할까요?\n최신 기록 1개는 남깁니다.`)) return;
+
+  try{
+    for(const r of deleteTargets){
+      await deleteDoc(doc(db,roomPath,r.id));
+    }
+    alert(`중복 기록 ${deleteTargets.length}개를 정리했습니다.`);
+  }catch(e){
+    alert("중복 정리 실패: "+e.message);
+  }
+}
+
+window.previewPastedLog=previewPastedLog;window.savePastedLog=savePastedLog;window.joinFamily=joinFamily;window.leaveFamily=leaveFamily;window.saveEntry=saveEntry;window.clearForm=clearForm;window.quickType=quickType;window.showScreen=showScreen;window.renderRecords=renderRecords;window.copySummary=copySummary;window.copyShareText=copyShareText;window.cleanupDuplicates=cleanupDuplicates;window.exportJSON=exportJSON;window.exportCSV=exportCSV;window.deleteEntry=deleteEntry;
 document.getElementById("dt").value=nowLocalInputValue();
 initFirebase();
 </script>
