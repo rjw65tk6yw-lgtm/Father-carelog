@@ -105,7 +105,7 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 <option value="슬흉위 / Knee-chest">슬흉위 / Knee-chest — 무릎-가슴 자세</option>
 
 </select>
-<div id="positionGuide" class="posGuide">체위 상세를 선택하면 간단 설명이 여기에 표시됩니다.</div>
+<div id="positionGuide" class="posGuide"></div>
 </div>
 <div><label>호흡/가래</label><select id="breath"><option value="">선택 안 함</option><option>깨끗함</option><option>그르렁 있음</option><option>기침 있음</option><option>깊은 석션 필요</option><option>SpO₂ 불안정</option></select></div>
 </div>
@@ -178,18 +178,24 @@ nav{position:fixed;left:0;right:0;bottom:0;background:rgba(255,255,255,.96);bord
 </div>
 
 
+
 <div class="card">
-  <h2>CSV 수정 반영</h2>
+  <h2>CSV 파일 수정 반영</h2>
   <div class="note">
     수정용 CSV를 내보낸 뒤, 잘못된 행 전체를 CSV에서 삭제하거나 값을 수정하세요.
-    수정 후 CSV 전체 내용을 아래 칸에 붙여넣으세요.
+    그 다음 아래에서 수정한 CSV 파일을 선택해 반영하면 됩니다. 붙여넣기 칸은 예비용입니다.
   </div>
+  <label>수정한 CSV 파일 선택</label>
+  <input id="editedCsvFile" type="file" accept=".csv,text/csv">
   <div class="row">
     <button onclick="downloadEditableCsv()">수정용 CSV 내보내기</button>
-    <button class="primary" onclick="applyEditedCsv()">CSV 수정 반영</button>
-    <button class="danger" onclick="syncEditedCsvWithDeletion()">CSV 기준 동기화 / 삭제 포함</button>
+    <button class="primary" onclick="applyEditedCsv()">CSV 파일 수정 반영</button>
+    <button class="danger" onclick="syncEditedCsvWithDeletion()">CSV 파일 기준 동기화 / 삭제 포함</button>
   </div>
-  <textarea id="editedCsvText" style="min-height:160px" placeholder="수정한 CSV 전체 내용을 여기에 붙여넣기"></textarea>
+  <details>
+    <summary>CSV 내용을 직접 붙여넣기</summary>
+    <textarea id="editedCsvText" style="min-height:120px" placeholder="파일 선택 대신 CSV 전체 내용을 여기에 붙여넣기"></textarea>
+  </details>
 </div>
 
 <div class="card">
@@ -436,7 +442,7 @@ function updatePositionGuide(){
   const v=val("positionDetail");
   const el=document.getElementById("positionGuide");
   if(!el) return;
-  if(!v){el.textContent="체위 상세를 선택하면 간단 설명이 여기에 표시됩니다.";return;}
+  if(!v){el.textContent="";return;}
   el.innerHTML=`<b>${v}</b><br>${POSITION_GUIDES[v]||""}`;
 }
 
@@ -939,9 +945,31 @@ function csvRowToRecord(o){
   };
 }
 
-function parseEditedCsvObjects(){
-  const text=document.getElementById("editedCsvText")?.value||"";
-  if(!text.trim()) throw new Error("수정한 CSV 내용을 붙여넣어 주세요.");
+
+function getSelectedCsvFile(){
+  const input=document.getElementById("editedCsvFile");
+  return input && input.files && input.files[0] ? input.files[0] : null;
+}
+
+function readFileAsText(file){
+  return new Promise((resolve,reject)=>{
+    const reader=new FileReader();
+    reader.onload=()=>resolve(String(reader.result||""));
+    reader.onerror=()=>reject(reader.error||new Error("파일 읽기 실패"));
+    reader.readAsText(file,"utf-8");
+  });
+}
+
+async function getEditedCsvText(){
+  const file=getSelectedCsvFile();
+  if(file) return await readFileAsText(file);
+  const ta=document.getElementById("editedCsvText");
+  return ta ? ta.value : "";
+}
+
+async function parseEditedCsvObjects(){
+  const text=await getEditedCsvText();
+  if(!text.trim()) throw new Error("수정한 CSV 파일을 선택하거나 CSV 내용을 붙여넣어 주세요.");
   const rows=parseCsvText(text);
   if(rows.length<2) throw new Error("CSV 내용이 부족합니다.");
   const headers=rows[0].map(h=>String(h).trim().replace(/^\ufeff/,""));
@@ -952,10 +980,17 @@ function parseEditedCsvObjects(){
   });
 }
 
+function clearEditedCsvInput(){
+  const f=document.getElementById("editedCsvFile");
+  const t=document.getElementById("editedCsvText");
+  if(f) f.value="";
+  if(t) t.value="";
+}
+
 async function applyEditedCsv(){
   if(!roomPath){alert("먼저 가족코드로 입장하세요.");showScreen("join");return;}
   let data;
-  try{data=parseEditedCsvObjects();}catch(e){alert(e.message);return;}
+  try{data=await parseEditedCsvObjects();}catch(e){alert(e.message);return;}
   if(!confirm(`${data.length}개 CSV 행을 앱 기록에 덮어쓸까요?\n체중 칸을 비우면 앱에서도 체중이 비워집니다.`))return;
   let saved=0;
   try{
@@ -965,7 +1000,7 @@ async function applyEditedCsv(){
       await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false});
       saved++;
     }
-    document.getElementById("editedCsvText").value="";
+    clearEditedCsvInput();
     alert(`CSV 수정 반영 완료: ${saved}개`);
   }catch(e){alert("CSV 수정 반영 실패: "+e.message);}
 }
@@ -973,7 +1008,7 @@ async function applyEditedCsv(){
 async function syncEditedCsvWithDeletion(){
   if(!roomPath){alert("먼저 가족코드로 입장하세요.");showScreen("join");return;}
   let data;
-  try{data=parseEditedCsvObjects();}catch(e){alert(e.message);return;}
+  try{data=await parseEditedCsvObjects();}catch(e){alert(e.message);return;}
   const csvIds=new Set();
   for(const o of data){
     const r=csvRowToRecord(o);
@@ -982,7 +1017,7 @@ async function syncEditedCsvWithDeletion(){
   }
   const existingIds=(allRows||[]).map(stableRecordId).filter(Boolean);
   const toDelete=existingIds.filter(id=>!csvIds.has(id));
-  const msg=`CSV 기준으로 앱 기록을 동기화할까요?\n\nCSV에 남은 기록: ${data.length}개\n앱에서 삭제될 기록: ${toDelete.length}개\n\nCSV에서 지운 행은 앱에서도 삭제됩니다.`;
+  const msg=`CSV 파일 기준으로 앱 기록을 동기화할까요?\n\nCSV에 남은 기록: ${data.length}개\n앱에서 삭제될 기록: ${toDelete.length}개\n\nCSV에서 지운 행은 앱에서도 삭제됩니다.`;
   if(!confirm(msg)) return;
   let saved=0, deleted=0;
   try{
@@ -996,7 +1031,7 @@ async function syncEditedCsvWithDeletion(){
       await deleteDoc(doc(db,roomPath,id));
       deleted++;
     }
-    document.getElementById("editedCsvText").value="";
+    clearEditedCsvInput();
     alert(`CSV 동기화 완료\n저장/덮어쓰기: ${saved}개\n삭제: ${deleted}개`);
   }catch(e){alert("CSV 동기화 실패: "+e.message);}
 }
