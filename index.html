@@ -498,8 +498,23 @@ function normalizeYearToken(y){
   return n<100 ? 2000+n : n;
 }
 
+
+function isSuctionCountLikeDateFragment(text){
+  const s=String(text||"");
+  if(/석션|suction|깊은/i.test(s) && /\b[1-9]\s*\/\s*[1-9]\b/.test(s)) return true;
+  return false;
+}
+
+function startsWithClockTime(text){
+  return /^[ㅇoO]?\s*\d{1,2}\s*[:시]\s*\d{0,2}/.test(String(text||"").trim());
+}
+
 function parseDateFromText(text, fallbackDate){
   const s=String(text||"").trim();
+  // 석션 횟수 2/2를 날짜로 오인하지 않음. 예: 석션 (2/2, 2/2 깊은)
+  if(isSuctionCountLikeDateFragment(s) && !/^\s*\d{2,4}\s*[.\-\/년]\s*\d{1,2}\s*[.\-\/월]\s*\d{1,2}/.test(s)) return fallbackDate || null;
+  // 시간으로 시작하는 기록 줄 안의 2/2, 1/3 등은 날짜가 아니라 처치 횟수로 본다.
+  if(startsWithClockTime(s) && /\b[1-9]\s*\/\s*[1-9]\b/.test(s) && !/^\s*\d{2,4}\s*[.\-\/년]/.test(s)) return fallbackDate || null;
   // 체중 산식 줄은 날짜로 오인하지 않음. 예: 체중 72.1 - 0.65 = 71.45 또는 체중 71.45 = 72.1 - 0.65
   if(/(?:체중|몸무게|weight|WT)/i.test(s) && /[=+\-*/]/.test(s) && !/^\s*\d{2,4}\s*[.\-\/년]\s*\d{1,2}\s*[.\-\/월]\s*\d{1,2}/.test(s)) return fallbackDate || null;
   // 체중 계산식 줄은 날짜로 오인하지 않음. 예: 체중 72.1 - 0.65 = 71.45
@@ -515,6 +530,8 @@ function parseDateFromText(text, fallbackDate){
 
 function lineLooksLikeDateHeader(line){
   const s=String(line||"").trim();
+  // 석션 횟수 줄은 날짜 헤더가 아님
+  if(isSuctionCountLikeDateFragment(s)) return false;
   if(!s || !parseDateFromText(s,null)) return false;
   if(/^[ㅇoO]?\s*\d{1,2}\s*[:시]/.test(s)) return false;
   if(/까지|부터|~/.test(s) && /(소변|대변|식사|물|석션|네뷸|토닥|혈압|산소|심박|체온)/.test(s)) return false;
@@ -610,7 +627,7 @@ function extractWeightFromText(text){
 function parseOneLogLine(line, baseDate){
   const original=line.trim();
   let ymd=baseDate||localDateString();
-  const parsedLineDate=parseDateFromText(original,null);
+  const parsedLineDate=(!startsWithClockTime(original) && /^\s*\d{2,4}\s*[.\-\/년]/.test(original)) ? parseDateFromText(original,null) : null;
   if(parsedLineDate && !/다음날/.test(original)) ymd=parsedLineDate;
 
   const t=parseTimeFromLine(original);
@@ -678,12 +695,46 @@ function parseOneLogLine(line, baseDate){
   return {dt,type:inferTypeFromText(original),spo2,hr,temp,oxygen,weight,sbp,dbp,feed,water,residual,urine,stool,hob,position,positionDetail,breath,memo:original,authorName:currentAuthor||val("authorName")||"가족",familyCode:currentCode,pasted:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
 }
 
+
+function extractSuctionRatioInfo(text){
+  const s=String(text||"");
+  if(!/석션|suction|깊은/i.test(s)) return "";
+  const matches=[...s.matchAll(/\b([1-9])\s*\/\s*([1-9])\b\s*(깊은)?/g)];
+  if(!matches.length) return "";
+
+  const parts=[];
+  matches.forEach((m)=>{
+    const deepCount=m[1];
+    const totalCount=m[2];
+    const near=s.slice(Math.max(0,m.index-10), m.index+25);
+    const markedDeep=!!m[3] || /깊은/.test(near);
+    if(markedDeep){
+      parts.push(`깊은 석션 ${deepCount}/${totalCount}`);
+    }else{
+      parts.push(`석션 ${deepCount}/${totalCount}`);
+    }
+  });
+  return [...new Set(parts)].join(", ");
+}
+
+function appendSuctionRatioMeaning(record){
+  if(!record || record.type!=="석션") return record;
+  const info=extractSuctionRatioInfo(record.memo||"");
+  if(info && !String(record.memo||"").includes("[석션횟수:")){
+    return {
+      ...record,
+      memo:`${record.memo}\n[석션횟수: ${info} — 분자=깊은 석션 횟수, 분모=깊은 석션 횟수+얕은 석션 횟수]`
+    };
+  }
+  return record;
+}
+
 function expandCompoundRecords(record){
   const actions=actionTypesInText(record.memo||"");
   if(actions.length>=2){
-    return actions.map(t=>({...record,type:t,memo:`${record.memo}\n[자동분리: ${t}]`}));
+    return actions.map(t=>appendSuctionRatioMeaning({...record,type:t,memo:`${record.memo}\n[자동분리: ${t}]`}));
   }
-  return [record];
+  return [appendSuctionRatioMeaning(record)];
 }
 
 function parsePastedLog(){
