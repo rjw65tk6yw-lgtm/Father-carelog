@@ -660,6 +660,22 @@ function extractWeightFromText(text){
   return null;
 }
 
+
+function inferBreathStatus(text){
+  const s=String(text||"");
+  const neg=/없음|없다|없고|아직\s*없|없다고|아니오|아님|X|x|무/.test(s);
+  const gr=/그르렁|가래\s*소리|가래소리/.test(s);
+
+  if(gr && neg) return "그르렁 없음";
+  if(gr) return "그르렁 있음";
+  if(/기침/.test(s) && neg) return "기침 없음";
+  if(/기침/.test(s)) return "기침 있음";
+  if(/깊은\s*석션/.test(s)) return "깊은 석션 필요";
+  if(/불안정|하락|떨어/.test(s) && /SpO|산소포화도/.test(s)) return "SpO₂ 불안정";
+  if(/깨끗|양호|이상\s*없|특이\s*없/.test(s)) return "깨끗함";
+  return "";
+}
+
 function parseOneLogLine(line, baseDate){
   const original=line.trim();
   let ymd=baseDate||localDateString();
@@ -721,12 +737,7 @@ function parseOneLogLine(line, baseDate){
 
   const positionDetail=(typeof inferPositionDetail==="function") ? inferPositionDetail(original) : "";
 
-  let breath="";
-  if(/그르렁/.test(original)) breath="그르렁 있음";
-  else if(/기침/.test(original)) breath="기침 있음";
-  else if(/깊은 석션/.test(original)) breath="깊은 석션 필요";
-  else if(/불안정|하락|떨어/.test(original) && /SpO|산소포화도/.test(original)) breath="SpO₂ 불안정";
-  else if(/깨끗|양호/.test(original)) breath="깨끗함";
+  let breath=inferBreathStatus(original);
 
   return {dt,type:inferTypeFromText(original),spo2,hr,temp,oxygen,weight,sbp,dbp,feed,water,residual,urine,stool,hob,position,positionDetail,breath,memo:original,authorName:currentAuthor||val("authorName")||"가족",familyCode:currentCode,pasted:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
 }
