@@ -62,7 +62,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 <div><label>호흡</label><input id="breath" placeholder="그르렁 없음/있음 등"></div>
 </div>
 <label>메모</label><textarea id="memo"></textarea>
-<div class="row"><button class="primary" onclick="saveManual()">저장</button><button onclick="clearInput()">비우기</button></div>
+<div id="editStatus" class="note"></div><div class="row"><button class="primary" onclick="saveManual()">저장</button><button onclick="clearInput()">비우기</button><button id="cancelEditBtn" style="display:none" onclick="cancelEdit()">수정 취소</button></div>
 </div>
 
 <div class="card">
@@ -121,7 +121,7 @@ const firebaseConfig={
 const app=initializeApp(firebaseConfig);
 const db=getFirestore(app);
 
-let currentCode="", currentAuthor="", roomPath="", allRows=[], unsub=null;
+let currentCode="", currentAuthor="", roomPath="", allRows=[], unsub=null, editingId="";
 
 const $=id=>document.getElementById(id);
 const val=id=>($(id)?.value||"").trim();
@@ -254,11 +254,59 @@ async function saveRows(rows){
   if(!roomPath){alert("먼저 입장하세요.");show("join");return}
   for(const r of rows){const id=recordId(r);await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false})}
 }
+
+function fillInputFromRecord(r){
+  $("dt").value=r.dt||nowInput();
+  $("type").value=r.type||"특이사항";
+  ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob"].forEach(k=>$(k).value=(r[k]!==null&&r[k]!==undefined)?r[k]:"");
+  $("position").value=r.position||"";
+  $("positionDetail").value=r.positionDetail||"";
+  $("breath").value=r.breath||"";
+  $("memo").value=stripKey(r.memo||"");
+}
+
+function editRecord(id){
+  const r=allRows.find(x=>x.id===id);
+  if(!r){alert("수정할 기록을 찾지 못했습니다.");return;}
+  editingId=id;
+  fillInputFromRecord(r);
+  $("editStatus").textContent=`수정 중: ${r.dt||""} [${r.type||""}]`;
+  $("cancelEditBtn").style.display="inline-block";
+  show("input");
+  window.scrollTo({top:0,behavior:"smooth"});
+}
+
+function cancelEdit(){
+  editingId="";
+  $("editStatus").textContent="";
+  $("cancelEditBtn").style.display="none";
+  clearInput();
+}
+
 async function saveManual(){
   const r={dt:val("dt")||nowInput(),type:val("type"),spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),weight:num("weight"),sbp:num("sbp"),dbp:num("dbp"),feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),position:val("position"),positionDetail:val("positionDetail"),breath:val("breath")||breathStatus(val("memo")),memo:val("memo"),authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
-  await saveRows([annotateSuction(r)]); clearInput(); alert("저장했습니다.");
+  if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
+  if(editingId){
+    await setDoc(doc(db,roomPath,editingId),{...annotateSuction(r),key:editingId},{merge:false});
+    editingId="";
+    $("editStatus").textContent="";
+    $("cancelEditBtn").style.display="none";
+    clearInput();
+    alert("수정 저장했습니다.");
+    show("records");
+    return;
+  }
+  await saveRows([annotateSuction(r)]);
+  clearInput();
+  alert("저장했습니다.");
 }
-function clearInput(){["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","breath","memo"].forEach(id=>$(id).value="");$("dt").value=nowInput()}
+
+function clearInput(){
+  ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","breath","memo"].forEach(id=>$(id).value="");
+  $("positionDetail").value="";
+  $("dt").value=nowInput();
+}
+
 function previewPaste(){const rows=parsePasteText();$("pastePreview").textContent=rows.map((r,i)=>`${i+1}. ${r.dt} [${r.type}] ${stripKey(r.memo)}`).join("\n\n")}
 async function savePaste(){const rows=parsePasteText();if(!rows.length){alert("저장할 기록이 없습니다.");return} if(!confirm(`${rows.length}개 기록을 저장/덮어쓰기 할까요?`))return; await saveRows(rows);$("pasteLog").value="";$("pastePreview").textContent="";alert("저장했습니다.");show("records")}
 
@@ -281,7 +329,7 @@ function render(){
   const today=todayRows(), obj=summaryObj(localDate(),today);
   $("todaySummary").innerHTML=Object.entries(obj).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("")+`<pre class="small">${obj.요약}</pre>`;
   const rows=allRows.slice().sort((a,b)=>(b.dt||"").localeCompare(a.dt||""));
-  $("recordsList").innerHTML=rows.map(r=>`<div class="rec"><h3>${r.dt||""} [${r.type||""}] ${warning(r)?'<span class="warn">주의</span>':""}</h3><div class="small">${detail(r)}</div><div class="memo">${escapeHtml(stripKey(r.memo||""))}</div><button class="danger" onclick="deleteRecord('${r.id}')">삭제</button></div>`).join("")||"<div class='note'>기록 없음</div>";
+  $("recordsList").innerHTML=rows.map(r=>`<div class="rec"><h3>${r.dt||""} [${r.type||""}] ${warning(r)?'<span class="warn">주의</span>':""}</h3><div class="small">${detail(r)}</div><div class="memo">${escapeHtml(stripKey(r.memo||""))}</div><button onclick="editRecord('${r.id}')">수정</button> <button class="danger" onclick="deleteRecord('${r.id}')">삭제</button></div>`).join("")||"<div class='note'>기록 없음</div>";
 }
 function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
@@ -314,7 +362,7 @@ async function saveTodaySummaryByDate(){const d=localDate();await setDoc(doc(db,
 async function saveAllDailySummaries(){for(const o of byDate())await setDoc(doc(db,`families/${currentCode}/dailySummaries`,o.날짜),{...o,updatedAt:serverTimestamp()},{merge:false});alert("저장했습니다.")}
 async function collapseSameTimeMeals(){const groups={};for(const r of allRows){if(isMeal(r))(groups[recordId(r)]||=[]).push(r)};let del=0;for(const [id,arr] of Object.entries(groups)){if(arr.length>1){const keep=arr[arr.length-1];await setDoc(doc(db,roomPath,id),{...keep,key:id},{merge:false});for(const r of arr){if(r.id&&r.id!==id){await deleteDoc(doc(db,roomPath,r.id));del++}}}}alert(`정리 완료: ${del}개 삭제`)}
 
-Object.assign(window,{show,joinFamily,saveManual,clearInput,previewPaste,savePaste,deleteRecord,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
+Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
 </script>
 </body>
 </html>
