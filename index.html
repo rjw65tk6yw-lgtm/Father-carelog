@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 최적화판 v32</title>
+<title>아버지 케어로그 최적화판 v34</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -21,16 +21,17 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 .rec{border-top:1px solid var(--line);padding:10px 0}.rec:first-child{border-top:0}.rec h3{font-size:15px;margin:0 0 6px}.memo{white-space:pre-wrap;color:#374151;font-size:14px;line-height:1.45}
 .small{font-size:12px;color:var(--muted)}
 @media(max-width:640px){.grid{grid-template-columns:1fr}.tabs button{min-width:48%}}
+.statusline{font-size:12px;color:#4b5563;margin-top:6px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 최적화판 v32</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 최적화판 v34</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
 <button onclick="show('input')">입력</button>
 <button onclick="show('records')">기록</button>
-<button onclick="show('backup')">백업</button>
+<button onclick="show('backup')">백업</button><button onclick="show('chatgpt')">ChatGPT</button>
 </div>
 
 <section id="screen-join">
@@ -83,6 +84,40 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 <div class="card"><h2>기록</h2><div id="recordsList"></div></div>
 </section>
 
+
+<section id="screen-chatgpt" style="display:none">
+<div class="card">
+<h2>ChatGPT로 보내기</h2>
+<div class="note">
+앱이 기록을 ChatGPT용 문장으로 정리해준다. 복사한 뒤 ChatGPT에 붙여넣으면 된다.
+API 키를 앱 안에 넣는 방식은 쓰지 않았다.
+</div>
+<div class="grid">
+<div><label>시작일</label><input id="gptStart" type="date"></div>
+<div><label>종료일</label><input id="gptEnd" type="date"></div>
+</div>
+<div class="row">
+<button onclick="buildGptPrompt('today')">오늘 기록 만들기</button>
+<button onclick="buildGptPrompt('3days')">최근 3일 만들기</button>
+<button onclick="buildGptPrompt('range')">선택 기간 만들기</button>
+<button onclick="buildGptPrompt('all')">전체 기록 만들기</button>
+</div>
+<label>ChatGPT에 붙여넣을 내용</label>
+<textarea id="gptPrompt" style="min-height:260px"></textarea>
+<div class="row">
+<button class="primary" onclick="copyGptPrompt()">복사</button>
+<button onclick="copyAndOpenChatGPT()">복사 후 ChatGPT 열기</button>
+<button onclick="shareGptPrompt()">iPhone 공유</button>
+</div>
+</div>
+<div class="card">
+<h2>기본 요청문</h2>
+<div class="note">
+아래 형식으로 ChatGPT가 읽기 쉽게 만든다. 의료 판단은 의사·간호사에게 확인해야 한다는 전제를 포함했다.
+</div>
+</div>
+</section>
+
 <section id="screen-backup" style="display:none">
 <div class="card">
 <h2>CSV 편집</h2>
@@ -130,6 +165,7 @@ const pad=n=>String(n).padStart(2,"0");
 const localDate=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
 const nowInput=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
 $("dt").value=nowInput();
+setTimeout(()=>{if($("gptStart")){$("gptStart").value=localDate();$("gptEnd").value=localDate();}},0);
 
 
 function scheduleRender(){
@@ -139,7 +175,7 @@ function scheduleRender(){
 }
 
 function show(name){
-  ["join","input","records","backup"].forEach(s=>$("screen-"+s).style.display=s===name?"block":"none");
+  ["join","input","records","backup","chatgpt"].forEach(s=>$("screen-"+s).style.display=s===name?"block":"none");
   if(name==="records") render();
 }
 function normalizeYear(y){const n=Number(y);return n<100?2000+n:n}
@@ -336,6 +372,7 @@ function clearInput(){
   ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","breath","memo"].forEach(id=>$(id).value="");
   $("positionDetail").value="";
   $("dt").value=nowInput();
+setTimeout(()=>{if($("gptStart")){$("gptStart").value=localDate();$("gptEnd").value=localDate();}},0);
 }
 
 function previewPaste(){const rows=parsePasteText();$("pastePreview").textContent=rows.map((r,i)=>`${i+1}. ${r.dt} [${r.type}] ${stripKey(r.memo)}`).join("\n\n")}
@@ -394,7 +431,151 @@ async function saveTodaySummaryByDate(){const d=localDate();await setDoc(doc(db,
 async function saveAllDailySummaries(){for(const o of byDate())await setDoc(doc(db,`families/${currentCode}/dailySummaries`,o.날짜),{...o,updatedAt:serverTimestamp()},{merge:false});alert("저장했습니다.")}
 async function collapseSameTimeMeals(){const groups={};for(const r of allRows){if(isMeal(r))(groups[recordId(r)]||=[]).push(r)};let del=0;for(const [id,arr] of Object.entries(groups)){if(arr.length>1){const keep=arr[arr.length-1];await setDoc(doc(db,roomPath,id),{...keep,key:id},{merge:false});for(const r of arr){if(r.id&&r.id!==id){await deleteDoc(doc(db,roomPath,r.id));del++}}}}alert(`정리 완료: ${del}개 삭제`)}
 
-Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
+
+
+function trimText(s,max=260){
+  s=String(s||"").replace(/\s+\n/g,"\n").replace(/\n{3,}/g,"\n\n").trim();
+  return s.length>max ? s.slice(0,max)+"…" : s;
+}
+
+function safeTextForClipboard(s){
+  return String(s||"").replace(/\u0000/g,"").trim();
+}
+
+async function copyTextSafely(text){
+  text=safeTextForClipboard(text);
+  if(!text){alert("복사할 내용이 없습니다.");return false;}
+  try{
+    await navigator.clipboard.writeText(text);
+    return true;
+  }catch(e){
+    const ta=document.createElement("textarea");
+    ta.value=text;
+    ta.style.position="fixed";
+    ta.style.left="-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok=document.execCommand("copy");
+    ta.remove();
+    if(!ok) alert("자동 복사에 실패했습니다. 내용을 직접 선택해서 복사하세요.");
+    return ok;
+  }
+}
+
+function rowsBetween(start,end){
+  return allRows.filter(r=>{
+    const d=(r.dt||"").slice(0,10);
+    if(!d) return false;
+    if(start && d<start) return false;
+    if(end && d>end) return false;
+    return true;
+  }).sort((a,b)=>(a.dt||"").localeCompare(b.dt||""));
+}
+
+function compactRecordLine(r){
+  const parts=[];
+  if(r.spo2!==null&&r.spo2!==undefined&&r.spo2!=="") parts.push(`SpO₂ ${r.spo2}`);
+  if(r.hr!==null&&r.hr!==undefined&&r.hr!=="") parts.push(`HR ${r.hr}`);
+  if(r.temp!==null&&r.temp!==undefined&&r.temp!=="") parts.push(`T ${r.temp}`);
+  if(r.sbp) parts.push(`BP ${r.sbp}/${r.dbp||""}`);
+  if(r.oxygen!==null&&r.oxygen!==undefined&&r.oxygen!=="") parts.push(`O₂ ${r.oxygen}L`);
+  if(r.feed!==null&&r.feed!==undefined&&r.feed!=="") parts.push(`식사 ${r.feed}mL`);
+  if(r.water!==null&&r.water!==undefined&&r.water!=="") parts.push(`물 ${r.water}mL`);
+  if(r.urine!==null&&r.urine!==undefined&&r.urine!=="") parts.push(`소변 ${r.urine}`);
+  if(r.stool!==null&&r.stool!==undefined&&r.stool!=="") parts.push(`대변 ${r.stool}`);
+  if(r.weight!==null&&r.weight!==undefined&&r.weight!=="") parts.push(`체중 ${r.weight}kg`);
+  if(r.hob!==null&&r.hob!==undefined&&r.hob!=="") parts.push(`HOB ${r.hob}`);
+  if(r.position) parts.push(r.position);
+  if(r.breath) parts.push(r.breath);
+  const meta=parts.length?` — ${parts.join(" / ")}`:"";
+  const memo=trimText(stripKey(r.memo||"").replace(/\n+/g," / "),320);
+  return `- ${r.dt||""} [${r.type||""}]${meta}${memo?` / ${memo}`:""}`;
+}
+
+function gptTextForRows(rows,title){
+  const originalCount=rows.length;
+  const maxRows=220;
+  const clipped=rows.length>maxRows;
+  if(clipped) rows=rows.slice(-maxRows);
+
+  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)).filter(Boolean))];
+  const summaries=dates.map(d=>{
+    const rs=rows.filter(r=>(r.dt||"").slice(0,10)===d);
+    return summaryObj(d,rs).요약;
+  }).join("\n\n");
+
+  const body=rows.map(compactRecordLine).join("\n");
+  return [
+`아버지 케어로그 분석 요청 — ${title}`,
+clipped?`※ 전체 ${originalCount}개 중 최근 ${maxRows}개만 포함했습니다. 필요하면 기간을 좁혀 다시 보냅니다.`:"",
+"",
+"전제:",
+"- 아래 기록은 보호자가 작성한 간병 로그다.",
+"- 의료적 판단은 주치의/간호사 확인이 우선이다.",
+"- 내가 놓친 위험 신호, 투석/수분/호흡/식사/대소변 관련 확인사항을 우선순위로 정리해줘.",
+"- 기록 오류로 보이는 부분이 있으면 따로 지적해줘.",
+"",
+"요약:",
+summaries || "요약 없음",
+"",
+"원기록:",
+body || "기록 없음",
+"",
+"원하는 답변 형식:",
+"1. 오늘/기간 핵심 변화",
+"2. 즉시 확인할 위험 신호",
+"3. 간호사·투석실에 물어볼 질문",
+"4. 기록상 오류 또는 더 기록해야 할 항목",
+"5. 보호자가 다음에 할 일"
+  ].filter(x=>x!==undefined).join("\n");
+}
+
+function buildGptPrompt(mode){
+  let start="", end="", title="";
+  const today=localDate();
+  if(mode==="today"){start=today;end=today;title="오늘 기록";}
+  else if(mode==="3days"){
+    const d=new Date(); d.setDate(d.getDate()-2);
+    start=`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`; end=today; title="최근 3일 기록";
+  }else if(mode==="range"){
+    start=val("gptStart"); end=val("gptEnd");
+    if(!start||!end){alert("시작일과 종료일을 입력하세요.");return;}
+    title=`${start} ~ ${end} 기록`;
+  }else{
+    title="전체 기록";
+  }
+  const rows=mode==="all"?allRows.slice().sort((a,b)=>(a.dt||"").localeCompare(b.dt||"")):rowsBetween(start,end);
+  $("gptPrompt").value=gptTextForRows(rows,title);
+  const box=$("gptPrompt");
+  box.dataset.count=String(rows.length);
+}
+
+async function copyGptPrompt(){
+  const text=val("gptPrompt");
+  if(!text){alert("먼저 ChatGPT용 내용을 만드세요.");return false;}
+  const ok=await copyTextSafely(text);
+  if(ok) alert("복사했습니다. ChatGPT에 붙여넣으면 됩니다.");
+  return ok;
+}
+
+async function copyAndOpenChatGPT(){
+  const ok=await copyGptPrompt();
+  if(ok) window.open("https://chatgpt.com/","_blank");
+}
+
+async function shareGptPrompt(){
+  const text=val("gptPrompt");
+  if(!text){alert("먼저 ChatGPT용 내용을 만드세요.");return;}
+  if(navigator.share){
+    await navigator.share({title:"아버지 케어로그",text});
+  }else{
+    await copyTextSafely(text);
+    alert("공유 기능이 없어 복사했습니다.");
+  }
+}
+
+Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
 </script>
 </body>
 </html>
