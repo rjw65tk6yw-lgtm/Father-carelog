@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 최적화판 v34</title>
+<title>아버지 케어로그 최적화판 v36</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -25,13 +25,13 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 최적화판 v34</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 최적화판 v36</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
 <button onclick="show('input')">입력</button>
 <button onclick="show('records')">기록</button>
-<button onclick="show('backup')">백업</button><button onclick="show('chatgpt')">ChatGPT</button>
+<button onclick="show('backup')">백업</button><button onclick="show('chatgpt')">ChatGPT</button><button onclick="show('gptin')">ChatGPT반영</button>
 </div>
 
 <section id="screen-join">
@@ -118,6 +118,48 @@ API 키를 앱 안에 넣는 방식은 쓰지 않았다.
 </div>
 </section>
 
+
+<section id="screen-gptin" style="display:none">
+<div class="card">
+<h2>ChatGPT 결과를 앱에 반영</h2>
+<div class="note">
+ChatGPT가 만든 TXT/DOCX/CSV 또는 붙여넣은 정리문을 앱 기록으로 읽어온다.
+같은 날짜·시간·종류의 기록은 기존 기록을 덮어쓴다. DOCX가 안 읽히면 TXT로 붙여넣으면 된다.
+</div>
+
+<label>파일 불러오기</label>
+<input id="gptInFile" type="file" accept=".txt,.csv,.docx,text/plain,text/csv,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+<div class="row">
+<button onclick="loadGptInFile()">파일 내용 읽기</button>
+<button onclick="clearGptIn()">비우기</button>
+</div>
+
+<label>ChatGPT 결과 붙여넣기</label>
+<textarea id="gptInText" style="min-height:220px" oninput="gptInTextChanged()" placeholder="예: 2026.6/19 금 325일차&#10;ㅇ5:15 혈압 114/67, 체온 37도, 산소포화도 92~93&#10;ㅇ7:19 ~ 투석 ..."></textarea>
+
+<div class="row">
+<button onclick="previewGptIn()">미리보기</button>
+<button class="primary" onclick="saveGptIn()">앱에 저장/덮어쓰기</button>
+</div>
+<div id="gptInStatus" class="statusline"></div><pre id="gptInPreview" class="small"></pre>
+</div>
+
+<div class="card">
+<h2>ChatGPT에서 이 형식으로 받으면 가장 정확함</h2>
+<div class="note">
+날짜 헤더 + 시간 기록 형태가 가장 잘 들어간다.
+</div>
+<pre class="small">2026.6/19 금 325일차
+ㅇ5:15 혈압 114/67, 체온 37도, 산소포화도 92~93
+ㅇ7:19 ~ 투석
+ - 목표 UF 500
+ - 투석실에 하루 평균 섭취량과 배출량 설명
+
+2026.6/20 토 326일차
+ㅇ14:30 점심식사 330ml, 물 195ml</pre>
+</div>
+</section>
+
 <section id="screen-backup" style="display:none">
 <div class="card">
 <h2>CSV 편집</h2>
@@ -140,6 +182,7 @@ API 키를 앱 안에 넣는 방식은 쓰지 않았다.
 </section>
 </main>
 
+<script defer src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
@@ -175,7 +218,7 @@ function scheduleRender(){
 }
 
 function show(name){
-  ["join","input","records","backup","chatgpt"].forEach(s=>$("screen-"+s).style.display=s===name?"block":"none");
+  ["join","input","records","backup","chatgpt","gptin"].forEach(s=>$("screen-"+s).style.display=s===name?"block":"none");
   if(name==="records") render();
 }
 function normalizeYear(y){const n=Number(y);return n<100?2000+n:n}
@@ -575,7 +618,105 @@ async function shareGptPrompt(){
   }
 }
 
-Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
+
+
+function setGptInStatus(msg){
+  if($("gptInStatus")) $("gptInStatus").textContent=msg||"";
+}
+
+async function loadGptInFile(){
+  const f=$("gptInFile").files[0];
+  if(!f){alert("파일을 선택하세요.");return;}
+  const name=f.name.toLowerCase();
+  setGptInStatus(`파일 읽는 중: ${f.name}`);
+  try{
+    if(name.endsWith(".docx")){
+      if(!window.mammoth){
+        alert("DOCX 읽기 모듈을 불러오지 못했습니다. TXT로 저장하거나 내용을 붙여넣어 주세요.");
+        setGptInStatus("DOCX 모듈 없음. TXT/붙여넣기 사용 가능.");
+        return;
+      }
+      const buf=await f.arrayBuffer();
+      const result=await window.mammoth.extractRawText({arrayBuffer:buf});
+      $("gptInText").value=result.value||"";
+    }else{
+      $("gptInText").value=await f.text();
+    }
+    setGptInStatus(`읽기 완료: ${$("gptInText").value.length.toLocaleString()}자`);
+    previewGptIn();
+  }catch(e){
+    setGptInStatus("파일 읽기 실패");
+    alert("파일 읽기 실패: "+e.message);
+  }
+}
+
+function clearGptIn(){
+  $("gptInFile").value="";
+  $("gptInText").value="";
+  $("gptInPreview").textContent="";
+  setGptInStatus("");
+}
+
+function parseGptIncomingText(){
+  const text=val("gptInText");
+  if(!text) return [];
+  const old=$("pasteLog").value;
+  $("pasteLog").value=text;
+  const rows=parsePasteText();
+  $("pasteLog").value=old;
+  return rows;
+}
+
+function previewRowsCompact(rows,limit=80){
+  if(!rows.length) return "읽어낸 기록이 없습니다. 날짜 헤더와 시간 기록 형식을 확인하세요.";
+  const shown=rows.slice(0,limit).map((r,i)=>{
+    const memo=trimText(stripKey(r.memo||"").replace(/\n+/g," / "),120);
+    return `${i+1}. ${r.dt} [${r.type}] ${memo}`;
+  }).join("\n");
+  const more=rows.length>limit?`\n\n… ${rows.length-limit}개 더 있음. 저장 시 전체 ${rows.length}개 반영.`:"";
+  return shown+more;
+}
+
+function previewGptIn(){
+  const text=val("gptInText");
+  if(!text){$("gptInPreview").textContent="";setGptInStatus("");return;}
+  const rows=parseGptIncomingText();
+  $("gptInPreview").textContent=previewRowsCompact(rows);
+  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)).filter(Boolean))];
+  setGptInStatus(`읽은 글자 ${text.length.toLocaleString()}자 · 기록 ${rows.length}개 · 날짜 ${dates.length}개`);
+}
+
+async function saveGptIn(){
+  const rows=parseGptIncomingText();
+  if(!rows.length){alert("저장할 기록이 없습니다.");return;}
+  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)).filter(Boolean))];
+  const msg=`ChatGPT 결과 ${rows.length}개 기록을 앱에 저장/덮어쓰기 할까요?\n날짜: ${dates.slice(0,8).join(", ")}${dates.length>8?" 외":""}`;
+  if(!confirm(msg))return;
+  setGptInStatus("저장 중...");
+  try{
+    await saveRows(rows);
+    alert("ChatGPT 결과를 앱에 반영했습니다.");
+    clearGptIn();
+    show("records");
+  }catch(e){
+    setGptInStatus("저장 실패");
+    alert("저장 실패: "+e.message);
+  }
+}
+
+
+
+let gptInTimer=null;
+function gptInTextChanged(){
+  clearTimeout(gptInTimer);
+  const text=val("gptInText");
+  setGptInStatus(text?`입력됨: ${text.length.toLocaleString()}자`:"");
+  gptInTimer=setTimeout(()=>{
+    if(text && text.length<20000) previewGptIn();
+  },500);
+}
+
+Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
 </script>
 </body>
 </html>
