@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 단순판</title>
+<title>아버지 케어로그 최적화판 v32</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -24,7 +24,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 단순판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 최적화판 v32</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -121,7 +121,7 @@ const firebaseConfig={
 const app=initializeApp(firebaseConfig);
 const db=getFirestore(app);
 
-let currentCode="", currentAuthor="", roomPath="", allRows=[], unsub=null, editingId="";
+let currentCode="", currentAuthor="", roomPath="", allRows=[], unsub=null, editingId="", renderQueued=false;
 
 const $=id=>document.getElementById(id);
 const val=id=>($(id)?.value||"").trim();
@@ -130,6 +130,13 @@ const pad=n=>String(n).padStart(2,"0");
 const localDate=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
 const nowInput=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
 $("dt").value=nowInput();
+
+
+function scheduleRender(){
+  if(renderQueued) return;
+  renderQueued=true;
+  requestAnimationFrame(()=>{renderQueued=false;render();});
+}
 
 function show(name){
   ["join","input","records","backup"].forEach(s=>$("screen-"+s).style.display=s===name?"block":"none");
@@ -150,19 +157,42 @@ function eventTime(s){const m=cleanEvent(s).match(/^(\d{1,2})\s*[:시]\s*(\d{2})
 function stripKey(s){return String(s||"").split(/\n/).filter(x=>!/^\s*key\s*:/i.test(x)).join("\n").trim()}
 function firstNum(re,s){const m=String(s).match(re);return m?Number(String(m[1]).replace(",",".")):null}
 
+
+function isReportOnlyContext(s){
+  s=String(s||"");
+  return /(하루\s*평균|하루평균|평균|정도|말하였다|말함|설명|전달|보고|투석실|간호사에게|목표\s*UF|UF\s*\d|봐서\s*빼|혈압이\s*\d+대로|낮아져서)/.test(s);
+}
+function isActualMealLine(s){
+  s=String(s||"");
+  if(isReportOnlyContext(s) && !/^(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어|\d{1,2}\s*[:시].*(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어))/.test(cleanEvent(s))) return false;
+  return /(아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\n]*\d+(?:[.,]\d+)?\s*(?:mL|ml|cc)/.test(s);
+}
+function isActualWaterLine(s){
+  s=String(s||"");
+  if(isReportOnlyContext(s) && !/^(?:물|수분|\d{1,2}\s*[:시].*(?:물|수분))/.test(cleanEvent(s))) return false;
+  return /(?:물|수분)[^\n]*\d+(?:[.,]\d+)?\s*(?:mL|ml|cc)/.test(s);
+}
+function isActualOutputLine(s){
+  s=String(s||"");
+  if(isReportOnlyContext(s) && !/^(?:소변|대변|\d{1,2}\s*[:시].*(?:소변|대변))/.test(cleanEvent(s))) return false;
+  return /(소변|대변|(?:^|[^소대])변)[^\n]*\d+(?:[.,]\d+)?\s*(?:g|mL|ml|cc)?/.test(s);
+}
+
 function inferType(s){
   if(/네뷸|nebul/i.test(s))return "네뷸";
   if(/토닥|vest|커프/i.test(s))return "토닥이";
   if(/석션|suction/i.test(s))return "석션";
   if(/구강\s*청소|입안\s*청소|oral|mouth/i.test(s))return "구강청소";
   if(/ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(s))return "수동적 ROM";
-  if(/아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어|물|수분/.test(s))return "식사/수분";
-  if(/소변|대변|변\s*\d/.test(s))return "대소변";
+  if(/투석|UF|투석실/.test(s))return "특이사항";
+  if(isActualMealLine(s)||isActualWaterLine(s))return "식사/수분";
+  if(isActualOutputLine(s))return "대소변";
   if(/BP|혈압|SpO|산소포화도|HR|심박|맥박|체온|몸무게|체중|WT/i.test(s))return "활력징후";
   if(/좌측위|우측위|정상위|앙와위|HOB|체위/.test(s))return "체위변경";
   if(/구토/.test(s))return "구토";
   return "특이사항";
 }
+
 function actionTypes(s){
   const a=[];
   if(/네뷸|nebul/i.test(s))a.push("네뷸");
@@ -218,7 +248,8 @@ function parseLine(text,date){
   let stool=firstNum(/대변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
   if(stool===null)stool=firstNum(/(?:^|[^소대])변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
   let position=""; if(/좌측위/.test(s))position="좌측위";else if(/우측위/.test(s))position="우측위";else if(/정상위|앙와위/.test(s))position="정상위/앙와위";
-  const r={dt:`${date}T${t}`,type:inferType(s),spo2:firstNum(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})/i,s),hr:firstNum(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i,s),temp:firstNum(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i,s),oxygen:firstNum(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i,s),weight:weightFrom(s),sbp:null,dbp:null,feed:firstNum(/(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s),water:firstNum(/(?:물|수분)[^\d]{0,16}(?:약\s*)?(\d+(?:[.,]\d+)?)/,s),residual:firstNum(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,12}(\d+(?:[.,]\d+)?)/i,s),urine,stool,hob:firstNum(/HOB\s*[:=]?\s*(\d{1,2})/i,s),position,positionDetail:"",breath:breathStatus(s),memo:s,authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
+  const actualMeal=isActualMealLine(s), actualWater=isActualWaterLine(s), actualOutput=isActualOutputLine(s);
+  const r={dt:`${date}T${t}`,type:inferType(s),spo2:firstNum(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})/i,s),hr:firstNum(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i,s),temp:firstNum(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i,s),oxygen:firstNum(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i,s),weight:weightFrom(s),sbp:null,dbp:null,feed:actualMeal?firstNum(/(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s):null,water:actualWater?firstNum(/(?:물|수분)[^\d]{0,16}(?:약\s*)?(\d+(?:[.,]\d+)?)/,s):null,residual:firstNum(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,12}(\d+(?:[.,]\d+)?)/i,s),urine:actualOutput?urine:null,stool:actualOutput?stool:null,hob:firstNum(/HOB\s*[:=]?\s*(\d{1,2})/i,s),position,positionDetail:"",breath:breathStatus(s),memo:s,authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
   const bp=s.match(/(?:BP|혈압)?\s*(\d{2,3})\s*\/\s*(\d{2,3})/i); if(bp){r.sbp=+bp[1];r.dbp=+bp[2]}
   return r;
 }
@@ -313,11 +344,11 @@ async function savePaste(){const rows=parsePasteText();if(!rows.length){alert("�
 function joinFamily(){
   currentAuthor=val("authorName")||"가족"; currentCode=val("familyCode")||"3434"; roomPath=`families/${currentCode}/records`;
   if(unsub)unsub();
-  unsub=onSnapshot(collection(db,roomPath),snap=>{allRows=snap.docs.map(d=>({id:d.id,...d.data()}));render();});
+  unsub=onSnapshot(collection(db,roomPath),snap=>{allRows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.dt||"").localeCompare(b.dt||""));scheduleRender();});
   $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor}`;
   show("input");
 }
-function todayRows(){const d=localDate();return allRows.filter(r=>(r.dt||"").slice(0,10)===d).sort((a,b)=>(a.dt||"").localeCompare(b.dt||""))}
+function todayRows(){const d=localDate();return allRows.filter(r=>(r.dt||"").slice(0,10)===d)}
 function sum(rows,k){return rows.reduce((a,r)=>a+(Number(r[k])||0),0)}
 function count(rows,t){return rows.filter(r=>r.type===t).length}
 function summaryObj(date,rows){
@@ -326,21 +357,22 @@ function summaryObj(date,rows){
   return {날짜:date,기록수:rows.length,식사:sum(rows,"feed"),물:sum(rows,"water"),소변:sum(rows,"urine"),대변:sum(rows,"stool"),네뷸:count(rows,"네뷸"),토닥이:count(rows,"토닥이"),석션:count(rows,"석션"),구강청소:count(rows,"구강청소"),수동적ROM:count(rows,"수동적 ROM"),체중:latestW,요약:text};
 }
 function render(){
+  if(currentCode) $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor} · 기록 ${allRows.length}개`;
   const today=todayRows(), obj=summaryObj(localDate(),today);
   $("todaySummary").innerHTML=Object.entries(obj).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("")+`<pre class="small">${obj.요약}</pre>`;
-  const rows=allRows.slice().sort((a,b)=>(b.dt||"").localeCompare(a.dt||""));
+  const rows=allRows.slice().reverse();
   $("recordsList").innerHTML=rows.map(r=>`<div class="rec"><h3>${r.dt||""} [${r.type||""}] ${warning(r)?'<span class="warn">주의</span>':""}</h3><div class="small">${detail(r)}</div><div class="memo">${escapeHtml(stripKey(r.memo||""))}</div><button onclick="editRecord('${r.id}')">수정</button> <button class="danger" onclick="deleteRecord('${r.id}')">삭제</button></div>`).join("")||"<div class='note'>기록 없음</div>";
 }
 function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
-async function deleteRecord(id){if(!confirm("이 기록을 삭제할까요?"))return;await deleteDoc(doc(db,roomPath,id))}
+async function deleteRecord(id){const r=allRows.find(x=>x.id===id);const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";if(!confirm(`이 기록을 삭제할까요?\n\n${label}`))return;await deleteDoc(doc(db,roomPath,id))}
 async function copyTodaySummary(){await navigator.clipboard.writeText(summaryObj(localDate(),todayRows()).요약);alert("복사했습니다.")}
 
 function csvEsc(v){const s=String(v??"");return /[",\n\r]/.test(s)?`"${s.replace(/"/g,'""')}"`:s}
 function download(name,text){const a=document.createElement("a"),blob=new Blob([text],{type:"text/csv;charset=utf-8"});a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
 const csvHeaders=["id","날짜시간","기록종류","SpO2","HR","체온","산소","체중","혈압수축","혈압이완","식사","물","잔류","소변","대변","HOB","체위","체위상세","호흡","메모"];
 function rowToCsv(r){return [r.id||recordId(r),r.dt||"",r.type||"",r.spo2??"",r.hr??"",r.temp??"",r.oxygen??"",r.weight??"",r.sbp??"",r.dbp??"",r.feed??"",r.water??"",r.residual??"",r.urine??"",r.stool??"",r.hob??"",r.position||"",r.positionDetail||"",r.breath||"",stripKey(r.memo||"")]}
-function downloadEditableCsv(){download(`아버지_케어로그_수정용_${localDate()}.csv`,"\ufeff"+[csvHeaders,...allRows.map(rowToCsv)].map(r=>r.map(csvEsc).join(",")).join("\n"))}
+function downloadEditableCsv(){if(!allRows.length){alert("내보낼 기록이 없습니다.");return;}download(`아버지_케어로그_수정용_${localDate()}.csv`,"\ufeff"+[csvHeaders,...allRows.map(rowToCsv)].map(r=>r.map(csvEsc).join(",")).join("\n"))}
 function parseCsv(text){const rows=[];let row=[],f="",q=false;text=String(text||"");for(let i=0;i<text.length;i++){const c=text[i],n=text[i+1];if(q){if(c=='"'&&n=='"'){f+='"';i++}else if(c=='"')q=false;else f+=c}else{if(c=='"')q=true;else if(c==","){row.push(f);f=""}else if(c=="\n"){row.push(f);rows.push(row);row=[];f=""}else if(c!="\r")f+=c}}row.push(f);rows.push(row);return rows.filter(r=>r.some(x=>String(x).trim()))}
 function csvNum(v){const s=String(v??"").trim();if(!s)return null;const n=Number(s.replace(",","."));return Number.isFinite(n)?n:null}
 function csvRecord(o){return {dt:o["날짜시간"]||"",type:o["기록종류"]||"특이사항",spo2:csvNum(o["SpO2"]),hr:csvNum(o["HR"]),temp:csvNum(o["체온"]),oxygen:csvNum(o["산소"]),weight:csvNum(o["체중"]),sbp:csvNum(o["혈압수축"]),dbp:csvNum(o["혈압이완"]),feed:csvNum(o["식사"]),water:csvNum(o["물"]),residual:csvNum(o["잔류"]),urine:csvNum(o["소변"]),stool:csvNum(o["대변"]),hob:csvNum(o["HOB"]),position:o["체위"]||"",positionDetail:o["체위상세"]||"",breath:o["호흡"]||"",memo:stripKey(o["메모"]||""),authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()}}
@@ -356,7 +388,7 @@ async function applyCsv(deleteMissing){
 }
 function summaryCsv(rows){const h=["날짜","기록수","식사","물","소변","대변","네뷸","토닥이","석션","구강청소","수동적ROM","체중","요약"];return "\ufeff"+[h,...rows.map(o=>h.map(k=>o[k]??""))].map(r=>r.map(csvEsc).join(",")).join("\n")}
 function byDate(){const m={};for(const r of allRows){const d=(r.dt||"").slice(0,10);if(d)(m[d]||=[]).push(r)}return Object.keys(m).sort().map(d=>summaryObj(d,m[d]))}
-function downloadDailySummaryCsv(){download(`아버지_케어로그_날짜별요약_${localDate()}.csv`,summaryCsv(byDate()))}
+function downloadDailySummaryCsv(){const rows=byDate();if(!rows.length){alert("내보낼 요약이 없습니다.");return;}download(`아버지_케어로그_날짜별요약_${localDate()}.csv`,summaryCsv(rows))}
 function downloadTodaySummaryCsv(){download(`아버지_케어로그_오늘요약_${localDate()}.csv`,summaryCsv([summaryObj(localDate(),todayRows())]))}
 async function saveTodaySummaryByDate(){const d=localDate();await setDoc(doc(db,`families/${currentCode}/dailySummaries`,d),{...summaryObj(d,todayRows()),updatedAt:serverTimestamp()},{merge:false});alert("저장했습니다.")}
 async function saveAllDailySummaries(){for(const o of byDate())await setDoc(doc(db,`families/${currentCode}/dailySummaries`,o.날짜),{...o,updatedAt:serverTimestamp()},{merge:false});alert("저장했습니다.")}
