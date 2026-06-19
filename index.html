@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 보수파서 최적화판 v46</title>
+<title>아버지 케어로그 안정화 최적화판 v48</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 보수파서 최적화판 v46</h1><div id="roomStatus" class="small">입장 전 · v46</div></header>
+<header><h1>아버지 케어로그 안정화 최적화판 v48</h1><div id="roomStatus" class="small">입장 전 · v48</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -171,10 +171,38 @@ $("dt").value=nowInput();
 setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if($("gptEnd")) $("gptEnd").value=d;},0);
 
 
+
+function showError(where,e){
+  const msg=(e&&e.message)?e.message:String(e||"알 수 없는 오류");
+  console.error(where,e);
+  alert(where+" 오류: "+msg);
+}
+function textToLines(text){
+  return String(text||"").replace(/\r/g,"").split(/\n/).map(x=>x.trim()).filter(Boolean);
+}
+
 function scheduleRender(){
   if(renderQueued) return;
   renderQueued=true;
   requestAnimationFrame(()=>{renderQueued=false;render();});
+}
+
+
+function joinFamily(){
+  try{
+    currentAuthor=val("authorName")||"가족";
+    currentCode=val("familyCode")||"3434";
+    roomPath=`families/${currentCode}/records`;
+    if(unsub) unsub();
+    unsub=onSnapshot(collection(db,roomPath),snap=>{
+      allRows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.dt||"").localeCompare(b.dt||""));
+      $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor} · 기록 ${allRows.length}개`;
+      scheduleRender();
+    },e=>showError("기록 불러오기",e));
+    show("input");
+  }catch(e){
+    showError("입장",e);
+  }
 }
 
 function show(name){
@@ -377,15 +405,53 @@ function annotateSuction(r){
   return r;
 }
 function parseLine(text,date){
-  const s=cleanEvent(text), t=eventTime(s)||nowInput().slice(11,16);
+  const s=String(text||"").trim();
+  const time=timeOf(s);
+  const dt=date+"T"+time;
+  const type=inferType(s);
+
+  const spo2=firstNum(/(?:SpO₂|SpO2|산소포화도)\s*(\d+(?:[.,]\d+)?)/i,s);
+  const hr=firstNum(/(?:HR|맥박|심박)\s*(\d+(?:[.,]\d+)?)/i,s);
+  const temp=firstNum(/(?:체온|BT|T)\s*(\d+(?:[.,]\d+)?)/i,s);
+  const oxygen=firstNum(/(?:O2|산소)\s*(?:NC|마스크)?\s*(\d+(?:[.,]\d+)?)\s*L/i,s);
+  const bp=s.match(/(?:혈압|BP)\s*(\d{2,3})\s*\/\s*(\d{2,3}|\?)/i);
+
+  const mealWater=explicitMealAmount(s);
+  const feed=mealWater.meal;
+  const water=mealWater.water;
+  const residual=firstNum(/(?:잔류|리거즈|residual)\s*(\d+(?:[.,]\d+)?)\s*(?:mL|ml|ML|cc)?/i,s);
   const urine=explicitOutputAmount("urine",s);
   const stool=explicitOutputAmount("stool",s);
-  let position=""; if(/좌측위/.test(s))position="좌측위";else if(/우측위/.test(s))position="우측위";else if(/정상위|앙와위/.test(s))position="정상위/앙와위";
-  const actualMeal=isActualMealLine(s), actualWater=isActualWaterLine(s), actualOutput=isActualOutputLine(s);
-  const r={dt:`${date}T${t}`,type:inferType(s),spo2:firstNum(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})/i,s),hr:firstNum(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i,s),temp:firstNum(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i,s),oxygen:firstNum(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i,s),weight:weightFrom(s),sbp:null,dbp:null,feed:actualMeal?firstNum(/(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s):null,water:actualWater?firstNum(/(?:물|수분)[^\d]{0,16}(?:약\s*)?(\d+(?:[.,]\d+)?)/,s):null,residual:firstNum(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,12}(\d+(?:[.,]\d+)?)/i,s),urine:actualOutput?urine:null,stool:actualOutput?stool:null,hob:firstNum(/HOB\s*[:=]?\s*(\d{1,2})/i,s),position,positionDetail:"",breath:breathStatus(s),memo:[s,conservativeMemoTag(s)].filter(Boolean).join(' '),authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
-  const bp=s.match(/(?:BP|혈압)?\s*(\d{2,3})\s*\/\s*(\d{2,3})/i); if(bp){r.sbp=+bp[1];r.dbp=+bp[2]}
-  return r;
+  const weight=explicitWeightAmount(s);
+  const hob=firstNum(/HOB\s*(\d+(?:[.,]\d+)?)/i,s);
+
+  const actualMeal=isActualMealLine(s);
+  const actualOutput=isActualOutputLine(s);
+  const tag=conservativeMemoTag(s);
+  const memo=[s,tag].filter(Boolean).join(" ");
+
+  return {
+    id:"",
+    dt,type,spo2,hr,temp,oxygen,weight,
+    sbp:bp?Number(bp[1]):null,
+    dbp:bp&&bp[2]!="?"?Number(bp[2]):null,
+    feed:actualMeal?feed:null,
+    water:actualMeal?water:null,
+    residual,
+    urine:actualOutput?urine:null,
+    stool:actualOutput?stool:null,
+    hob,
+    position:positionOf(s),
+    positionDetail:positionDetail(s),
+    breath:breathStatus(s),
+    memo,
+    authorName:currentAuthor||"가족",
+    familyCode:currentCode||"",
+    warning:""
+  };
 }
+
+
 function expandRecord(r){
   const acts=actionTypes(r.memo);
   if(acts.length>=2)return acts.map(t=>annotateSuction({...r,type:t,memo:`${r.memo}\n[자동분리: ${t}]`}));
@@ -404,7 +470,7 @@ function recordId(r){
 }
 
 function parseTextToRows(text){
-  const lines=String(text||"").split(/\n/).map(x=>x.trim()).filter(Boolean);
+  const lines=textToLines(text);
   let cur=localDate(), pending=null, rows=[];
   const flush=()=>{
     if(!pending) return;
@@ -422,14 +488,26 @@ function parseTextToRows(text){
   return rows;
 }
 
+
 function parsePasteText(){
   return parseTextToRows(val("pasteLog"));
 }
 
+
+
 async function saveRows(rows){
-  if(!roomPath){alert("먼저 입장하세요.");show("join");return}
-  for(const r of rows){const id=recordId(r);await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false})}
+  if(!roomPath){show("join");throw new Error("먼저 입장하세요.");}
+  if(!Array.isArray(rows)||!rows.length) return 0;
+  let count=0;
+  for(const row of rows){
+    const r=annotateSuction({...row});
+    const id=r.id||recordId(r);
+    await setDoc(doc(db,roomPath,id),{...r,key:id,warning:warning(r),updatedAt:serverTimestamp()},{merge:false});
+    count++;
+  }
+  return count;
 }
+
 
 function fillInputFromRecord(r){
   $("dt").value=r.dt||nowInput();
@@ -460,22 +538,39 @@ function cancelEdit(){
 }
 
 async function saveManual(){
-  const r={dt:val("dt")||nowInput(),type:val("type"),spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),weight:num("weight"),sbp:num("sbp"),dbp:num("dbp"),feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),position:val("position"),positionDetail:val("positionDetail"),breath:val("breath")||breathStatus(val("memo")),memo:val("memo"),authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
-  if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
-  if(editingId){
-    await setDoc(doc(db,roomPath,editingId),{...annotateSuction(r),key:editingId},{merge:false});
-    editingId="";
-    $("editStatus").textContent="";
-    $("cancelEditBtn").style.display="none";
+  try{
+    if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
+    const r={
+      dt:val("dt")||nowInput(),
+      type:val("type"),
+      spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),weight:num("weight"),
+      sbp:num("sbp"),dbp:num("dbp"),
+      feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),
+      position:val("position"),positionDetail:val("positionDetail"),
+      breath:val("breath")||breathStatus(val("memo")),
+      memo:val("memo"),
+      authorName:currentAuthor||"가족",
+      familyCode:currentCode
+    };
+    if(editingId){
+      const fixed=annotateSuction({...r,id:editingId});
+      await setDoc(doc(db,roomPath,editingId),{...fixed,key:editingId,warning:warning(fixed),updatedAt:serverTimestamp()},{merge:false});
+      editingId="";
+      $("editStatus").textContent="";
+      $("cancelEditBtn").style.display="none";
+      clearInput();
+      alert("수정 저장했습니다.");
+      show("records");
+      return;
+    }
+    await saveRows([r]);
     clearInput();
-    alert("수정 저장했습니다.");
-    show("records");
-    return;
+    alert("저장했습니다.");
+  }catch(e){
+    showError("직접 입력 저장",e);
   }
-  await saveRows([annotateSuction(r)]);
-  clearInput();
-  alert("저장했습니다.");
 }
+
 
 function clearInput(){
   ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","breath","memo"].forEach(id=>$(id).value="");
@@ -484,16 +579,32 @@ function clearInput(){
 setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if($("gptEnd")) $("gptEnd").value=d;},0);
 }
 
-function previewPaste(){const rows=parsePasteText();$("pastePreview").textContent=rows.map((r,i)=>`${i+1}. ${r.dt} [${r.type}] ${stripKey(r.memo)}`).join("\n\n")}
-async function savePaste(){const rows=parsePasteText();if(!rows.length){alert("저장할 기록이 없습니다.");return} if(!confirm(`${rows.length}개 기록을 저장/덮어쓰기 할까요?`))return; await saveRows(rows);$("pasteLog").value="";$("pastePreview").textContent="";alert("저장했습니다.");show("records")}
-
-function joinFamily(){
-  currentAuthor=val("authorName")||"가족"; currentCode=val("familyCode")||"3434"; roomPath=`families/${currentCode}/records`;
-  if(unsub)unsub();
-  unsub=onSnapshot(collection(db,roomPath),snap=>{allRows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.dt||"").localeCompare(b.dt||""));scheduleRender();});
-  $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor}`;
-  show("input");
+function previewPaste(){
+  try{
+    const rows=parsePasteText();
+    $("pastePreview").textContent=previewRows(rows);
+    return rows;
+  }catch(e){
+    $("pastePreview").textContent="파싱 오류: "+(e&&e.message?e.message:e);
+    return [];
+  }
 }
+
+
+async function savePaste(){
+  try{
+    const rows=parsePasteText();
+    if(!rows.length){alert("저장할 기록이 없습니다.");return;}
+    const n=await saveRows(rows);
+    $("pastePreview").textContent=`저장 완료: ${n}개`;
+    $("pasteLog").value="";
+    await render();
+  }catch(e){
+    showError("로그붙여넣기 저장",e);
+  }
+}
+
+
 function todayRows(){const d=localDate();return allRows.filter(r=>(r.dt||"").slice(0,10)===d)}
 function sum(rows,k){return rows.reduce((a,r)=>a+(Number(r[k])||0),0)}
 function count(rows,t){return rows.filter(r=>r.type===t).length}
@@ -511,8 +622,27 @@ function render(){
 }
 function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
-async function deleteRecord(id){const r=allRows.find(x=>x.id===id);const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";if(!confirm(`이 기록을 삭제할까요?\n\n${label}`))return;await deleteDoc(doc(db,roomPath,id))}
-async function copyTodaySummary(){await navigator.clipboard.writeText(summaryObj(localDate(),todayRows()).요약);alert("복사했습니다.")}
+async function deleteRecord(id){
+  try{
+    if(!roomPath){alert("먼저 입장하세요.");return;}
+    const r=allRows.find(x=>x.id===id);
+    const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";
+    if(!confirm(`이 기록을 삭제할까요?\n\n${label}`)) return;
+    await deleteDoc(doc(db,roomPath,id));
+  }catch(e){
+    showError("삭제",e);
+  }
+}
+
+async function copyTodaySummary(){
+  try{
+    await navigator.clipboard.writeText(summaryObj(localDate(),todayRows()).요약);
+    alert("복사했습니다.");
+  }catch(e){
+    showError("오늘 요약 복사",e);
+  }
+}
+
 
 function csvEsc(v){const s=String(v??"");return /[",\n\r]/.test(s)?`"${s.replace(/"/g,'""')}"`:s}
 function download(name,text){const a=document.createElement("a"),blob=new Blob([text],{type:"text/csv;charset=utf-8"});a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
@@ -691,30 +821,30 @@ function setGptInStatus(msg){
 }
 
 async function loadGptInFile(){
-  const f=$("gptInFile").files[0];
-  if(!f){alert("파일을 선택하세요.");return;}
-  const name=f.name.toLowerCase();
-  setGptInStatus(`파일 읽는 중: ${f.name}`);
   try{
+    const input=$("gptInFile");
+    const f=input&&input.files&&input.files[0];
+    if(!f){alert("파일을 선택하세요.");return;}
+    setGptInStatus("파일 읽는 중...");
+    let text="";
+    const name=(f.name||"").toLowerCase();
     if(name.endsWith(".docx")){
-      if(!window.mammoth){
-        alert("DOCX 읽기 모듈을 불러오지 못했습니다. TXT로 저장하거나 내용을 붙여넣어 주세요.");
-        setGptInStatus("DOCX 모듈 없음. TXT/붙여넣기 사용 가능.");
-        return;
-      }
-      const buf=await f.arrayBuffer();
-      const result=await window.mammoth.extractRawText({arrayBuffer:buf});
-      $("gptInText").value=result.value||"";
+      if(!window.mammoth) throw new Error("DOCX 읽기 모듈이 아직 로드되지 않았습니다. 잠시 후 다시 누르거나 TXT로 저장해 불러오세요.");
+      const ab=await f.arrayBuffer();
+      const result=await window.mammoth.extractRawText({arrayBuffer:ab});
+      text=result.value||"";
     }else{
-      $("gptInText").value=await f.text();
+      text=await f.text();
     }
-    setGptInStatus(`읽기 완료: ${$("gptInText").value.length.toLocaleString()}자`);
+    $("gptInText").value=text;
+    setGptInStatus(`파일 읽기 완료: ${text.length.toLocaleString()}자`);
     previewGptIn();
   }catch(e){
-    setGptInStatus("파일 읽기 실패");
-    alert("파일 읽기 실패: "+e.message);
+    setGptInStatus("파일 읽기 오류");
+    showError("파일 읽기",e);
   }
 }
+
 
 function clearGptIn(){
   $("gptInFile").value="";
@@ -727,6 +857,7 @@ function parseGptIncomingText(){
   return parseTextToRows(val("gptInText"));
 }
 
+
 function previewRowsCompact(rows,limit=50){
   if(!rows.length) return "읽어낸 기록이 없습니다. 날짜 헤더와 시간 기록 형식을 확인하세요.";
   const shown=rows.slice(0,limit).map((r,i)=>{
@@ -738,31 +869,37 @@ function previewRowsCompact(rows,limit=50){
 }
 
 function previewGptIn(){
-  const text=val("gptInText");
-  if(!text){$("gptInPreview").textContent="";setGptInStatus("");return;}
-  const rows=parseGptIncomingText();
-  $("gptInPreview").textContent=previewRowsCompact(rows);
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)).filter(Boolean))];
-  setGptInStatus(`읽은 글자 ${text.length.toLocaleString()}자 · 기록 ${rows.length}개 · 날짜 ${dates.length}개`);
-}
-
-async function saveGptIn(){
-  const rows=parseGptIncomingText();
-  if(!rows.length){alert("저장할 기록이 없습니다.");return;}
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)).filter(Boolean))];
-  const msg=`ChatGPT 결과 ${rows.length}개 기록을 앱에 저장/덮어쓰기 할까요?\n날짜: ${dates.slice(0,8).join(", ")}${dates.length>8?" 외":""}`;
-  if(!confirm(msg))return;
-  setGptInStatus("저장 중...");
   try{
-    await saveRows(rows);
-    alert("연동: Notes/ChatGPT ↔ 앱했습니다.");
-    clearGptIn();
-    show("records");
+    const rows=parseGptIncomingText();
+    $("gptInPreview").textContent=(typeof previewRowsCompact==="function")?previewRowsCompact(rows):previewRows(rows);
+    setGptInStatus(`미리보기: ${rows.length}개`);
+    return rows;
   }catch(e){
-    setGptInStatus("저장 실패");
-    alert("저장 실패: "+e.message);
+    $("gptInPreview").textContent="파싱 오류: "+((e&&e.message)?e.message:e);
+    setGptInStatus("파싱 오류");
+    return [];
   }
 }
+
+
+async function saveGptIn(){
+  try{
+    const rows=parseGptIncomingText();
+    if(!rows.length){alert("저장할 기록이 없습니다.");return;}
+    const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)).filter(Boolean))];
+    const msg=`파일/ChatGPT 결과 ${rows.length}개 기록을 앱에 저장/덮어쓰기 할까요?\n날짜: ${dates.slice(0,8).join(", ")}${dates.length>8?" 외":""}`;
+    if(!confirm(msg)) return;
+    setGptInStatus("저장 중...");
+    const n=await saveRows(rows);
+    setGptInStatus(`저장 완료: ${n}개`);
+    $("gptInPreview").textContent=`저장 완료: ${n}개`;
+    await render();
+  }catch(e){
+    setGptInStatus("저장 오류");
+    showError("파일 반영 저장",e);
+  }
+}
+
 
 
 
@@ -792,7 +929,19 @@ function goPasteInput(){
   }
 }
 
-Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
+
+function parserSelfTest(){
+  const cases=[
+    ["기록 1. 대소변 언급",r=>!r[0]||((r[0].urine==null)&&(r[0].stool==null))],
+    ["2026.6.18 목 / 324일차\nㅇ5:15 소변 140g",r=>r[0]&&r[0].dt.startsWith("2026-06-18")&&r[0].urine===140],
+    ["2026.6.18 목 / 324일차\nㅇ6:00 식사 330mL, 물 200mL",r=>r[0]&&r[0].feed===330&&r[0].water===200],
+    ["체중 50.35kg 72.2 - 21.85 = 50.35kg",r=>!r[0]||r[0].weight==null],
+    ["다음 Na 재검 예정은 2026.6.22 월요일이다.",r=>!r[0]||!r[0].dt.startsWith("2026-06-22")]
+  ];
+  return cases.map(([text,ok])=>({text,ok:!!ok(parseTextToRows(text))}));
+}
+
+Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,parserSelfTest});
 </script>
 </body>
 </html>
