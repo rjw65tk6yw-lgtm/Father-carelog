@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 단순최적화판 v38</title>
+<title>아버지 케어로그 연동탭 수정판 v39</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -25,7 +25,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 단순최적화판 v38</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 연동탭 수정판 v39</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -144,7 +144,7 @@ const pad=n=>String(n).padStart(2,"0");
 const localDate=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
 const nowInput=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
 $("dt").value=nowInput();
-setTimeout(()=>{if($("gptStart")){$("gptStart").value=localDate();$("gptEnd").value=localDate();}},0);
+setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if($("gptEnd")) $("gptEnd").value=d;},0);
 
 
 function scheduleRender(){
@@ -154,9 +154,19 @@ function scheduleRender(){
 }
 
 function show(name){
-  ["join","input","records","backup","gptin"].forEach(s=>$("screen-"+s).style.display=s===name?"block":"none");
+  const screens=["join","input","records","backup","gptin"];
+  screens.forEach(s=>{
+    const el=$("screen-"+s);
+    if(el) el.style.display=(s===name)?"block":"none";
+  });
   if(name==="records") render();
+  if(name==="gptin"){
+    const d=localDate();
+    if($("gptStart")&&!$("gptStart").value) $("gptStart").value=d;
+    if($("gptEnd")&&!$("gptEnd").value) $("gptEnd").value=d;
+  }
 }
+
 function normalizeYear(y){const n=Number(y);return n<100?2000+n:n}
 function dateHeader(line){
   const s=String(line||"").trim();
@@ -374,7 +384,7 @@ function clearInput(){
   ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","breath","memo"].forEach(id=>$(id).value="");
   $("positionDetail").value="";
   $("dt").value=nowInput();
-setTimeout(()=>{if($("gptStart")){$("gptStart").value=localDate();$("gptEnd").value=localDate();}},0);
+setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if($("gptEnd")) $("gptEnd").value=d;},0);
 }
 
 function previewPaste(){const rows=parsePasteText();$("pastePreview").textContent=rows.map((r,i)=>`${i+1}. ${r.dt} [${r.type}] ${stripKey(r.memo)}`).join("\n\n")}
