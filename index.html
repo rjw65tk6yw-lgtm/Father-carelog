@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 안정화 최적화판 v48</title>
+<title>아버지 케어로그 안전기록장 v49</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 안정화 최적화판 v48</h1><div id="roomStatus" class="small">입장 전 · v48</div></header>
+<header><h1>아버지 케어로그 안전기록장 v49</h1><div id="roomStatus" class="small">입장 전 · v49</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -70,6 +70,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 <div class="card">
 <h2>로그 붙여넣기</h2>
 <div class="note">날짜 헤더 뒤에 시간 기록을 붙여넣으면 자동 분류한다. 메모 안의 예정일·2/2·1/3은 날짜로 보지 않는다.</div>
+<div class="note">안전기록장 원칙: 원문은 메모로 보존하고, 수량은 항목명+숫자+단위가 명확할 때만 구조화한다. 애매하면 메모전용으로 저장한다.</div>
 <textarea id="pasteLog" placeholder="2026.6/16 화 322일차&#10;ㅇ14:30 점심식사 330ml, 물 195ml&#10;- 다음 Na 재검 예정: 26.6/22 월요일"></textarea>
 <div class="row"><button onclick="previewPaste()">미리보기</button><button class="primary" onclick="savePaste()">붙여넣기 저장/덮어쓰기</button></div>
 <pre id="pastePreview" class="small"></pre>
@@ -341,29 +342,46 @@ function isActualOutputLine(s){
 }
 
 function inferType(s){
-  if(/네뷸|nebul/i.test(s))return "네뷸";
-  if(/토닥|vest|커프/i.test(s))return "토닥이";
-  if(/석션|suction/i.test(s))return "석션";
-  if(/구강\s*청소|입안\s*청소|oral|mouth/i.test(s))return "구강청소";
-  if(/ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(s))return "수동적 ROM";
-  if(/투석|UF|투석실/.test(s))return "특이사항";
-  if(isActualMealLine(s)||isActualWaterLine(s))return "식사/수분";
-  if(isActualOutputLine(s))return "대소변";
-  if(/BP|혈압|SpO|산소포화도|HR|심박|맥박|체온|몸무게|체중|WT/i.test(s))return "활력징후";
-  if(/좌측위|우측위|정상위|앙와위|HOB|체위/.test(s))return "체위변경";
-  if(/구토/.test(s))return "구토";
+  s=String(s||"");
+  if(isActualMealLine(s)) return "식사/수분";
+  if(isActualOutputLine(s)) return "대소변";
+  const acts=actionTypes(s);
+  if(acts.length===1) return acts[0];
+  if(/혈압|BP|체온|산소포화도|SpO₂|SpO2|HR|맥박|심박/.test(s)) return "활력징후";
+  if(/체위|좌측위|우측위|정상위|HOB/.test(s) && !isLooseNarrative(s)) return "체위변경";
+  if(/구토/.test(s) && !NEG_RE.test(s)) return "구토";
   return "특이사항";
 }
 
+
+
+function actualActionContext(s){
+  s=String(s||"");
+  if(/(필요|고려|여부|원함|원한다|요청|설명|전달|질문|계획|예정|주의|기준|판단)/.test(s) && !/(시행|실시|완료|함|했다|진행|시작|재시작)/.test(s)) return false;
+  return /(시행|실시|완료|함|했다|진행|시작|재시작|석션\s*\(|네뷸|토닥이|구강청소|ROM)/.test(s);
+}
+function hasStructuredValue(r){
+  return ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob"].some(k=>r[k]!==null&&r[k]!==undefined&&r[k]!=="");
+}
+function parseModeOf(r){
+  if(r.parseMode) return r.parseMode;
+  if(r.source==="manual") return "수동입력";
+  if(hasStructuredValue(r) || ["네뷸","토닥이","석션","구강청소","수동적 ROM","체위변경","구토"].includes(r.type)) return "구조화";
+  return "메모전용";
+}
+
 function actionTypes(s){
+  s=String(s||"");
+  if(!actualActionContext(s)) return [];
   const a=[];
   if(/네뷸|nebul/i.test(s))a.push("네뷸");
-  if(/토닥|vest|커프/i.test(s))a.push("토닥이");
+  if(/토닥|타진|percussion/i.test(s))a.push("토닥이");
   if(/석션|suction/i.test(s))a.push("석션");
-  if(/구강\s*청소|입안\s*청소|oral|mouth/i.test(s))a.push("구강청소");
-  if(/ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(s))a.push("수동적 ROM");
+  if(/구강\s*청소|구강청소|구강케어/i.test(s))a.push("구강청소");
+  if(/ROM|수동\s*ROM|수동적\s*ROM/i.test(s))a.push("수동적 ROM");
   return [...new Set(a)];
 }
+
 function breathStatus(s){
   const neg=/없음|없다|없고|아직\s*없|없다고|아니오|아님|이상\s*없|특이\s*없/.test(s);
   if(/그르렁|가래\s*소리|가래소리/.test(s))return neg?"그르렁 없음":"그르렁 있음";
@@ -406,58 +424,51 @@ function annotateSuction(r){
 }
 function parseLine(text,date){
   const s=String(text||"").trim();
-  const time=timeOf(s);
-  const dt=date+"T"+time;
-  const type=inferType(s);
-
+  const time=timeOf(s), dt=date+"T"+time, type=inferType(s);
   const spo2=firstNum(/(?:SpO₂|SpO2|산소포화도)\s*(\d+(?:[.,]\d+)?)/i,s);
   const hr=firstNum(/(?:HR|맥박|심박)\s*(\d+(?:[.,]\d+)?)/i,s);
   const temp=firstNum(/(?:체온|BT|T)\s*(\d+(?:[.,]\d+)?)/i,s);
   const oxygen=firstNum(/(?:O2|산소)\s*(?:NC|마스크)?\s*(\d+(?:[.,]\d+)?)\s*L/i,s);
   const bp=s.match(/(?:혈압|BP)\s*(\d{2,3})\s*\/\s*(\d{2,3}|\?)/i);
-
   const mealWater=explicitMealAmount(s);
-  const feed=mealWater.meal;
-  const water=mealWater.water;
+  const feed=mealWater.meal, water=mealWater.water;
   const residual=firstNum(/(?:잔류|리거즈|residual)\s*(\d+(?:[.,]\d+)?)\s*(?:mL|ml|ML|cc)?/i,s);
-  const urine=explicitOutputAmount("urine",s);
-  const stool=explicitOutputAmount("stool",s);
+  const urine=explicitOutputAmount("urine",s), stool=explicitOutputAmount("stool",s);
   const weight=explicitWeightAmount(s);
   const hob=firstNum(/HOB\s*(\d+(?:[.,]\d+)?)/i,s);
-
-  const actualMeal=isActualMealLine(s);
-  const actualOutput=isActualOutputLine(s);
   const tag=conservativeMemoTag(s);
-  const memo=[s,tag].filter(Boolean).join(" ");
-
-  return {
-    id:"",
-    dt,type,spo2,hr,temp,oxygen,weight,
-    sbp:bp?Number(bp[1]):null,
-    dbp:bp&&bp[2]!="?"?Number(bp[2]):null,
-    feed:actualMeal?feed:null,
-    water:actualMeal?water:null,
-    residual,
-    urine:actualOutput?urine:null,
-    stool:actualOutput?stool:null,
-    hob,
-    position:positionOf(s),
-    positionDetail:positionDetail(s),
-    breath:breathStatus(s),
-    memo,
-    authorName:currentAuthor||"가족",
-    familyCode:currentCode||"",
-    warning:""
+  const r={
+    id:"",dt,type,spo2,hr,temp,oxygen,weight,
+    sbp:bp?Number(bp[1]):null,dbp:bp&&bp[2]!="?"?Number(bp[2]):null,
+    feed:isActualMealLine(s)?feed:null,water:isActualMealLine(s)?water:null,
+    residual,urine:isActualOutputLine(s)?urine:null,stool:isActualOutputLine(s)?stool:null,
+    hob,position:positionOf(s),positionDetail:positionDetail(s),breath:breathStatus(s),
+    memo:[s,tag].filter(Boolean).join(" "),
+    source:"paste",authorName:currentAuthor||"가족",familyCode:currentCode||"",warning:""
   };
+  r.parseMode=parseModeOf(r);
+  return r;
 }
+
 
 
 function expandRecord(r){
   const acts=actionTypes(r.memo);
-  if(acts.length>=2)return acts.map(t=>annotateSuction({...r,type:t,memo:`${r.memo}\n[자동분리: ${t}]`}));
+  if(acts.length>=2 && actualActionContext(r.memo)){
+    return acts.map(t=>{
+      const x=annotateSuction({...r,type:t,memo:`${r.memo}\n[자동분리: ${t}]`});
+      x.parseMode="구조화";
+      return x;
+    });
+  }
+  r.parseMode=parseModeOf(r);
   return [annotateSuction(r)];
 }
-function isMeal(r){return r.type==="식사/수분"||r.feed!==null||r.water!==null||/(식사|경관식|피딩|뉴케어|물|수분)/.test(r.memo||"")}
+
+function isMeal(r){
+  return r.type==="식사/수분" || r.feed!==null || r.water!==null;
+}
+
 function recordId(r){
   const dt=(r.dt||"").slice(0,16);
   if(isMeal(r))return `meal_${dt}`;
@@ -501,12 +512,14 @@ async function saveRows(rows){
   let count=0;
   for(const row of rows){
     const r=annotateSuction({...row});
+    r.parseMode=parseModeOf(r);
     const id=r.id||recordId(r);
     await setDoc(doc(db,roomPath,id),{...r,key:id,warning:warning(r),updatedAt:serverTimestamp()},{merge:false});
     count++;
   }
   return count;
 }
+
 
 
 function fillInputFromRecord(r){
@@ -541,35 +554,21 @@ async function saveManual(){
   try{
     if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
     const r={
-      dt:val("dt")||nowInput(),
-      type:val("type"),
+      dt:val("dt")||nowInput(),type:val("type"),
       spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),weight:num("weight"),
-      sbp:num("sbp"),dbp:num("dbp"),
-      feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),
-      position:val("position"),positionDetail:val("positionDetail"),
-      breath:val("breath")||breathStatus(val("memo")),
-      memo:val("memo"),
-      authorName:currentAuthor||"가족",
-      familyCode:currentCode
+      sbp:num("sbp"),dbp:num("dbp"),feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),
+      position:val("position"),positionDetail:val("positionDetail"),breath:val("breath")||breathStatus(val("memo")),
+      memo:val("memo"),source:"manual",parseMode:"수동입력",authorName:currentAuthor||"가족",familyCode:currentCode
     };
     if(editingId){
       const fixed=annotateSuction({...r,id:editingId});
       await setDoc(doc(db,roomPath,editingId),{...fixed,key:editingId,warning:warning(fixed),updatedAt:serverTimestamp()},{merge:false});
-      editingId="";
-      $("editStatus").textContent="";
-      $("cancelEditBtn").style.display="none";
-      clearInput();
-      alert("수정 저장했습니다.");
-      show("records");
-      return;
+      editingId="";$("editStatus").textContent="";$("cancelEditBtn").style.display="none";clearInput();alert("수정 저장했습니다.");show("records");return;
     }
-    await saveRows([r]);
-    clearInput();
-    alert("저장했습니다.");
-  }catch(e){
-    showError("직접 입력 저장",e);
-  }
+    await saveRows([r]);clearInput();alert("저장했습니다.");
+  }catch(e){showError("직접 입력 저장",e);}
 }
+
 
 
 function clearInput(){
@@ -620,7 +619,17 @@ function render(){
   const rows=allRows.slice().reverse();
   $("recordsList").innerHTML=rows.map(r=>`<div class="rec"><h3>${r.dt||""} [${r.type||""}] ${warning(r)?'<span class="warn">주의</span>':""}</h3><div class="small">${detail(r)}</div><div class="memo">${escapeHtml(stripKey(r.memo||""))}</div><button onclick="editRecord('${r.id}')">수정</button> <button class="danger" onclick="deleteRecord('${r.id}')">삭제</button></div>`).join("")||"<div class='note'>기록 없음</div>";
 }
-function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
+function detail(r){
+  const a=[parseModeOf(r)];
+  ["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{
+    if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`);
+  });
+  if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`);
+  if(r.position)a.push(r.position);
+  if(r.breath)a.push(r.breath);
+  return a.join(" / ");
+}
+
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 async function deleteRecord(id){
   try{
@@ -932,14 +941,17 @@ function goPasteInput(){
 
 function parserSelfTest(){
   const cases=[
-    ["기록 1. 대소변 언급",r=>!r[0]||((r[0].urine==null)&&(r[0].stool==null))],
+    ["기록 1. 대소변 언급",r=>r[0]&&r[0].parseMode==="메모전용"&&r[0].urine==null&&r[0].stool==null],
     ["2026.6.18 목 / 324일차\nㅇ5:15 소변 140g",r=>r[0]&&r[0].dt.startsWith("2026-06-18")&&r[0].urine===140],
     ["2026.6.18 목 / 324일차\nㅇ6:00 식사 330mL, 물 200mL",r=>r[0]&&r[0].feed===330&&r[0].water===200],
-    ["체중 50.35kg 72.2 - 21.85 = 50.35kg",r=>!r[0]||r[0].weight==null],
-    ["다음 Na 재검 예정은 2026.6.22 월요일이다.",r=>!r[0]||!r[0].dt.startsWith("2026-06-22")]
+    ["체중 50.35kg 72.2 - 21.85 = 50.35kg",r=>r[0]&&r[0].weight==null],
+    ["다음 Na 재검 예정은 2026.6.22 월요일이다.",r=>r[0]&&!r[0].dt.startsWith("2026-06-22")],
+    ["석션 필요 여부 확인",r=>r[0]&&r[0].type==="특이사항"],
+    ["네뷸·토닥이·석션 시행",r=>r.length>=2]
   ];
   return cases.map(([text,ok])=>({text,ok:!!ok(parseTextToRows(text))}));
 }
+
 
 Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,parserSelfTest});
 </script>
