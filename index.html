@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v44 복구기준판</title>
+<title>아버지 케어로그 단순최적화판 v42</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v44 복구기준판</h1><div id="roomStatus" class="small">입장 전 · v44 복구기준</div></header>
+<header><h1>아버지 케어로그 단순최적화판 v42</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -95,7 +95,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 <div class="card">
 <h2>연동: 파일 → 앱</h2>
 <div class="note">
-연동 탭은 파일 반영과 ChatGPT 내보내기 전용이다. Notes 복사문은 입력 탭을 사용한다.
+연동 탭은 파일 반영과 ChatGPT 내보내기 전용이다. Notes 복사문은 입력 탭의 로그붙여넣기를 사용한다.
 </div>
 
 <label>TXT/DOCX/CSV 파일 불러오기</label>
@@ -107,7 +107,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </div>
 
 <label>파일에서 읽은 내용</label>
-<textarea id="gptInText" style="min-height:180px" oninput="gptInTextChanged()" placeholder="파일을 읽으면 내용이 여기에 표시됩니다. 직접 붙여넣기는 입력 탭을 사용하세요."></textarea>
+<textarea id="gptInText" style="min-height:180px" oninput="gptInTextChanged()" placeholder="파일을 읽으면 내용이 여기에 표시됩니다. 직접 붙여넣기는 입력 탭의 로그붙여넣기를 사용하세요."></textarea>
 
 <div class="row">
 <button onclick="previewGptIn()">미리보기</button>
@@ -196,29 +196,20 @@ function dateHeader(line){
   if(!s) return "";
   if(typeof startsTime==="function" && startsTime(s)) return "";
 
-  // 날짜 오인 방지: 체중/계산식/수치 산식은 날짜 헤더가 아니다.
-  // 예: "체중 50.35kg 72.2 - 21.85 = 50.35kg"를 2072-02-21로 오인하지 않음.
-  const hasCalc=/[=+\-*×÷]/.test(s) && /\d+(?:[.,]\d+)?/.test(s);
-  const looksWeight=/(체중|몸무게|weight|WT|kg|킬로)/i.test(s);
-  if((hasCalc||looksWeight) && !/^\s*\d{2,4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}/.test(s)){
-    return "";
-  }
-
   // 예정/재검/전달/설명 문장의 날짜는 기록 날짜가 아니다.
   if(/(예정|재검|예약|다음|검사|진료|투석실|간호사에게|말하였다|설명|전달|보고)/.test(s)
      && !/(^어제|^오늘|기록|일차|요약|로그)/.test(s)) return "";
 
-  // 명확한 연월일: 2026.6.18 / 2026년 6월 18일 / 26.6.18
+  // 2026.6/18, 2026년 6월 18일, 26.6/18
   let m=s.match(/(?:^|\s)(\d{2,4})\s*[.\-/년]\s*(\d{1,2})\s*[.\/월-]\s*(\d{1,2})(?:\s*일)?/);
   if(m){
     const yy=normalizeYear(m[1]), mm=+m[2], dd=+m[3];
     if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return `${yy}-${pad(mm)}-${pad(dd)}`;
   }
 
-  // 연도 없는 날짜는 제목/헤더 성격일 때만 허용한다.
-  // 예: "아버지 6월 18일 핵심 요약", "6/18 목요일 기록", "어제 6/18 목요일"
+  // 6/18 목요일 기록, 어제 6/18 목요일, 6월 18일 기록
   m=s.match(/(?:^|\s)(\d{1,2})\s*(?:[.\/월])\s*(\d{1,2})(?:\s*일)?/);
-  if(m && /(^어제|^오늘|기록|일차|요약|로그|핵심|정리|아버지|월요일|화요일|수요일|목요일|금요일|토요일|일요일|[월화수목금토일]\s*$)/.test(s)){
+  if(m && /(^어제|^오늘|기록|일차|요약|로그|월요일|화요일|수요일|목요일|금요일|토요일|일요일|[월화수목금토일]\s*$)/.test(s)){
     const mm=+m[1], dd=+m[2];
     if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return `${new Date().getFullYear()}-${pad(mm)}-${pad(dd)}`;
   }
@@ -739,7 +730,7 @@ function goPasteInput(){
   }
 }
 
-Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
 </script>
 </body>
 </html>
