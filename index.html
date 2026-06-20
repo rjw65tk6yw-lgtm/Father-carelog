@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v45 복구기준판</title>
+<title>아버지 케어로그 v44 복구기준판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v45 복구기준판</h1><div id="roomStatus" class="small">입장 전 · v45 복구기준</div></header>
+<header><h1>아버지 케어로그 v44 복구기준판</h1><div id="roomStatus" class="small">입장 전 · v44 복구기준</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -238,31 +238,6 @@ function stripKey(s){return String(s||"").split(/\n/).filter(x=>!/^\s*key\s*:/i.
 function firstNum(re,s){const m=String(s).match(re);return m?Number(String(m[1]).replace(",",".")):null}
 
 
-
-function stripLeadingNumbering(s){
-  return String(s||"")
-    .replace(/^\s*(?:기록\s*)?\d+\s*[.)．]\s*/,"")
-    .replace(/^\s*[①②③④⑤⑥⑦⑧⑨⑩]\s*/,"")
-    .trim();
-}
-
-function explicitOutputAmount(kind,s){
-  s=stripLeadingNumbering(s);
-  const unit="(?:g|그램|mL|ml|ML|cc)";
-  let re;
-  if(kind==="urine"){
-    re=new RegExp("(?:소변|urine)\\s*(?:량|총량)?\\s*[:：=\\-]?\\s*(\\d+(?:[.,]\\d+)?)\\s*"+unit,"i");
-  }else{
-    re=new RegExp("(?:대변|변)\\s*(?:량|총량)?\\s*[:：=\\-]?\\s*(\\d+(?:[.,]\\d+)?)\\s*"+unit,"i");
-  }
-  const m=s.match(re);
-  return m ? Number(String(m[1]).replace(",",".")) : null;
-}
-
-function hasExplicitOutputAmount(s){
-  return explicitOutputAmount("urine",s)!==null || explicitOutputAmount("stool",s)!==null;
-}
-
 function isReportOnlyContext(s){
   s=String(s||"");
   return /(하루\s*평균|하루평균|평균|정도|말하였다|말함|설명|전달|보고|투석실|간호사에게|목표\s*UF|UF\s*\d|봐서\s*빼|혈압이\s*\d+대로|낮아져서)/.test(s);
@@ -279,10 +254,8 @@ function isActualWaterLine(s){
 }
 function isActualOutputLine(s){
   s=String(s||"");
-  // 번호 붙은 제목/메모는 수량이 아니다. 예: "기록 1. 대소변 언급"
-  // 실제 수량은 "소변 140g", "소변 140mL", "대변 80g"처럼 항목명 뒤 숫자+단위가 있어야 한다.
   if(isReportOnlyContext(s) && !/^(?:소변|대변|\d{1,2}\s*[:시].*(?:소변|대변))/.test(cleanEvent(s))) return false;
-  return hasExplicitOutputAmount(s);
+  return /(소변|대변|(?:^|[^소대])변)[^\n]*\d+(?:[.,]\d+)?\s*(?:g|mL|ml|cc)?/.test(s);
 }
 
 function inferType(s){
@@ -351,8 +324,9 @@ function annotateSuction(r){
 }
 function parseLine(text,date){
   const s=cleanEvent(text), t=eventTime(s)||nowInput().slice(11,16);
-  const urine=explicitOutputAmount("urine",s);
-  const stool=explicitOutputAmount("stool",s);
+  const urine=firstNum(/소변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
+  let stool=firstNum(/대변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
+  if(stool===null)stool=firstNum(/(?:^|[^소대])변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
   let position=""; if(/좌측위/.test(s))position="좌측위";else if(/우측위/.test(s))position="우측위";else if(/정상위|앙와위/.test(s))position="정상위/앙와위";
   const actualMeal=isActualMealLine(s), actualWater=isActualWaterLine(s), actualOutput=isActualOutputLine(s);
   const r={dt:`${date}T${t}`,type:inferType(s),spo2:firstNum(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})/i,s),hr:firstNum(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i,s),temp:firstNum(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i,s),oxygen:firstNum(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i,s),weight:weightFrom(s),sbp:null,dbp:null,feed:actualMeal?firstNum(/(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s):null,water:actualWater?firstNum(/(?:물|수분)[^\d]{0,16}(?:약\s*)?(\d+(?:[.,]\d+)?)/,s):null,residual:firstNum(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,12}(\d+(?:[.,]\d+)?)/i,s),urine:actualOutput?urine:null,stool:actualOutput?stool:null,hob:firstNum(/HOB\s*[:=]?\s*(\d{1,2})/i,s),position,positionDetail:"",breath:breathStatus(s),memo:s,authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
