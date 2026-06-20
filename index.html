@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 필수함수 점검판 v54</title>
+<title>아버지 케어로그 삭제버튼 수정판 v55</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 필수함수 점검판 v54</h1><div id="roomStatus" class="small">입장 전 · v54</div></header>
+<header><h1>아버지 케어로그 삭제버튼 수정판 v55</h1><div id="roomStatus" class="small">입장 전 · v55</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -756,10 +756,24 @@ function summaryObj(date,rows){
 function render(){
   if(currentCode) $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor} · 기록 ${allRows.length}개`;
   const today=todayRows(), obj=summaryObj(localDate(),today);
-  $("todaySummary").innerHTML=Object.entries(obj).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("")+`<pre class="small">${obj.요약}</pre>`;
+  $("todaySummary").innerHTML=Object.entries(obj)
+    .filter(([k])=>k!=="요약")
+    .map(([k,v])=>`<span class="pill">${k}: ${v}</span>`)
+    .join("")+`<pre class="small">${obj.요약}</pre>`;
   const rows=allRows.slice().reverse();
-  $("recordsList").innerHTML=rows.map(r=>`<div class="rec"><h3>${r.dt||""} [${r.type||""}] ${warning(r)?'<span class="warn">주의</span>':""}</h3><div class="small">${detail(r)}</div><div class="memo">${escapeHtml(stripKey(r.memo||""))}</div><button onclick="editRecord('${r.id}')">수정</button> <button class="danger" onclick="deleteRecord('${r.id}')">삭제</button></div>`).join("")||"<div class='note'>기록 없음</div>";
+  $("recordsList").innerHTML=rows.map(r=>{
+    const id=escapeAttr(r.id||r.key||recordId(r));
+    const warn=warning(r)?'<span class="warn">주의</span>':"";
+    return `<div class="rec">
+      <h3>${r.dt||""} [${r.type||""}] ${warn}</h3>
+      <div class="small">${detail(r)}</div>
+      <div class="memo">${escapeHtml(stripKey(r.memo||""))}</div>
+      <button onclick="editRecord('${id}')">수정</button>
+      <button class="danger" onclick="deleteRecord('${id}')">삭제</button>
+    </div>`;
+  }).join("")||"<div class='note'>기록 없음</div>";
 }
+
 function detail(r){
   const a=[parseModeOf(r)];
   ["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{
@@ -774,15 +788,25 @@ function detail(r){
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 async function deleteRecord(id){
   try{
-    if(!roomPath){alert("먼저 입장하세요.");return;}
-    const r=allRows.find(x=>x.id===id);
-    const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";
+    if(!roomPath){
+      alert("먼저 입장하세요.");
+      show("join");
+      return;
+    }
+    if(!id){
+      alert("삭제할 기록 ID가 없습니다.");
+      return;
+    }
+    const r=allRows.find(x=>(x.id||x.key)===id);
+    const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,120)}`:id;
     if(!confirm(`이 기록을 삭제할까요?\n\n${label}`)) return;
     await deleteDoc(doc(db,roomPath,id));
+    setText("roomStatus",`삭제 완료 · ${currentCode||""}`);
   }catch(e){
     showError("삭제",e);
   }
 }
+
 
 async function copyTodaySummary(){
   try{
@@ -1125,6 +1149,12 @@ function pasteSelfTest(){
 
 
 
+function escapeAttr(s){
+  return String(s??"")
+    .replace(/\\/g,"\\\\")
+    .replace(/'/g,"\\'")
+    .replace(/\n/g," ");
+}
 Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,parserSelfTest,pasteSelfTest,timeOf,startsTime,cleanEvent,positionOf,positionDetail});
 </script>
 </body>
