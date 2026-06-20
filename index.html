@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 단순최적화판 v42</title>
+<title>아버지 케어로그 v42 백업탭 복구판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 단순최적화판 v42</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 백업탭 복구판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -90,6 +90,38 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 
 
 
+
+
+<section id="screen-backup" style="display:none">
+<div class="card">
+<h2>백업</h2>
+<div class="note">
+v42 기준 백업 탭 복구. 파서/기록 저장 로직은 건드리지 않고, 빠져 있던 백업 화면 본문만 복구했다.
+</div>
+
+<h3>내보내기</h3>
+<div class="row">
+<button onclick="downloadEditableCsv()">수정용 CSV 내보내기</button>
+<button onclick="downloadDailySummaryCsv()">날짜별 요약 CSV 내보내기</button>
+<button onclick="downloadTodaySummaryCsv()">오늘 기록·요약 CSV 저장</button>
+</div>
+
+<h3>CSV 수정 반영</h3>
+<label>수정한 CSV 파일</label>
+<input id="csvFile" type="file" accept=".csv,text/csv">
+<div class="row">
+<button onclick="applyCsv(false)">CSV 수정 반영</button>
+<button onclick="applyCsv(true)">CSV 기준 동기화/삭제 포함</button>
+</div>
+
+<h3>요약 저장</h3>
+<div class="row">
+<button onclick="saveTodaySummaryByDate()">오늘 요약 저장/덮어쓰기</button>
+<button onclick="saveAllDailySummaries()">날짜별 요약 저장/덮어쓰기</button>
+<button onclick="collapseSameTimeMeals()">같은 시간 식사 중복 정리</button>
+</div>
+</div>
+</section>
 
 <section id="screen-gptin" style="display:none">
 <div class="card">
