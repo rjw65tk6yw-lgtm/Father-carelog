@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 백업탭 수정판 v50</title>
+<title>아버지 케어로그 로그붙여넣기 재복구판 v51</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 백업탭 수정판 v50</h1><div id="roomStatus" class="small">입장 전 · v50</div></header>
+<header><h1>아버지 케어로그 로그붙여넣기 재복구판 v51</h1><div id="roomStatus" class="small">입장 전 · v51</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -67,14 +67,18 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 <div id="editStatus" class="note"></div><div class="row"><button class="primary" onclick="saveManual()">저장</button><button onclick="clearInput()">비우기</button><button id="cancelEditBtn" style="display:none" onclick="cancelEdit()">수정 취소</button></div>
 </div>
 
+
 <div class="card">
-<h2>로그 붙여넣기</h2>
-<div class="note">날짜 헤더 뒤에 시간 기록을 붙여넣으면 자동 분류한다. 메모 안의 예정일·2/2·1/3은 날짜로 보지 않는다.</div>
-<div class="note">안전기록장 원칙: 원문은 메모로 보존하고, 수량은 항목명+숫자+단위가 명확할 때만 구조화한다. 애매하면 메모전용으로 저장한다.</div>
-<textarea id="pasteLog" placeholder="2026.6/16 화 322일차&#10;ㅇ14:30 점심식사 330ml, 물 195ml&#10;- 다음 Na 재검 예정: 26.6/22 월요일"></textarea>
-<div class="row"><button onclick="previewPaste()">미리보기</button><button class="primary" onclick="savePaste()">붙여넣기 저장/덮어쓰기</button></div>
+<h2>로그붙여넣기</h2>
+<div class="note">원문은 메모로 보존한다. 명확한 수치만 구조화하고, 애매하면 메모전용으로 저장한다.</div>
+<textarea id="pasteLog" style="min-height:220px" placeholder="여기에 Notes/원문 로그를 붙여넣으세요.&#10;&#10;예:&#10;2026.6/18 목 324일차&#10;ㅇ23:55 재개한 저녁식사 270ml(kcal), 물 120ml"></textarea>
+<div class="row">
+<button onclick="previewPaste()">미리보기</button>
+<button class="primary" onclick="savePaste()">붙여넣기 저장/덮어쓰기</button>
+</div>
 <pre id="pastePreview" class="small"></pre>
 </div>
+
 </section>
 
 <section id="screen-records" style="display:none">
@@ -195,6 +199,7 @@ setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if
 
 
 
+function setText(id,text){const el=$(id); if(el) el.textContent=text;}
 function showError(where,e){
   const msg=(e&&e.message)?e.message:String(e||"알 수 없는 오류");
   console.error(where,e);
@@ -448,31 +453,46 @@ function annotateSuction(r){
 }
 function parseLine(text,date){
   const s=String(text||"").trim();
-  const time=timeOf(s), dt=date+"T"+time, type=inferType(s);
+  const time=timeOf(s);
+  const dt=date+"T"+time;
+  const type=inferType(s);
   const spo2=firstNum(/(?:SpO₂|SpO2|산소포화도)\s*(\d+(?:[.,]\d+)?)/i,s);
   const hr=firstNum(/(?:HR|맥박|심박)\s*(\d+(?:[.,]\d+)?)/i,s);
   const temp=firstNum(/(?:체온|BT|T)\s*(\d+(?:[.,]\d+)?)/i,s);
   const oxygen=firstNum(/(?:O2|산소)\s*(?:NC|마스크)?\s*(\d+(?:[.,]\d+)?)\s*L/i,s);
   const bp=s.match(/(?:혈압|BP)\s*(\d{2,3})\s*\/\s*(\d{2,3}|\?)/i);
   const mealWater=explicitMealAmount(s);
-  const feed=mealWater.meal, water=mealWater.water;
+  const feed=mealWater.meal;
+  const water=mealWater.water;
   const residual=firstNum(/(?:잔류|리거즈|residual)\s*(\d+(?:[.,]\d+)?)\s*(?:mL|ml|ML|cc)?/i,s);
-  const urine=explicitOutputAmount("urine",s), stool=explicitOutputAmount("stool",s);
+  const urine=explicitOutputAmount("urine",s);
+  const stool=explicitOutputAmount("stool",s);
   const weight=explicitWeightAmount(s);
   const hob=firstNum(/HOB\s*(\d+(?:[.,]\d+)?)/i,s);
   const tag=conservativeMemoTag(s);
   const r={
     id:"",dt,type,spo2,hr,temp,oxygen,weight,
-    sbp:bp?Number(bp[1]):null,dbp:bp&&bp[2]!="?"?Number(bp[2]):null,
-    feed:isActualMealLine(s)?feed:null,water:isActualMealLine(s)?water:null,
-    residual,urine:isActualOutputLine(s)?urine:null,stool:isActualOutputLine(s)?stool:null,
-    hob,position:positionOf(s),positionDetail:positionDetail(s),breath:breathStatus(s),
+    sbp:bp?Number(bp[1]):null,
+    dbp:bp&&bp[2]!="?"?Number(bp[2]):null,
+    feed:isActualMealLine(s)?feed:null,
+    water:isActualMealLine(s)?water:null,
+    residual,
+    urine:isActualOutputLine(s)?urine:null,
+    stool:isActualOutputLine(s)?stool:null,
+    hob,
+    position:positionOf(s),
+    positionDetail:positionDetail(s),
+    breath:breathStatus(s),
     memo:[s,tag].filter(Boolean).join(" "),
-    source:"paste",authorName:currentAuthor||"가족",familyCode:currentCode||"",warning:""
+    source:"paste",
+    authorName:currentAuthor||"가족",
+    familyCode:currentCode||"",
+    warning:""
   };
   r.parseMode=parseModeOf(r);
   return r;
 }
+
 
 
 
@@ -505,7 +525,7 @@ function recordId(r){
 }
 
 function parseTextToRows(text){
-  const lines=textToLines(text);
+  const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
   let cur=localDate(), pending=null, rows=[];
   const flush=()=>{
     if(!pending) return;
@@ -524,25 +544,35 @@ function parseTextToRows(text){
 }
 
 
+
 function parsePasteText(){
-  return parseTextToRows(val("pasteLog"));
+  const text=val("pasteLog");
+  if(!text) return [];
+  return parseTextToRows(text);
 }
+
 
 
 
 async function saveRows(rows){
-  if(!roomPath){show("join");throw new Error("먼저 입장하세요.");}
+  if(!roomPath) throw new Error("먼저 입장하세요.");
   if(!Array.isArray(rows)||!rows.length) return 0;
-  let count=0;
+  let n=0;
   for(const row of rows){
     const r=annotateSuction({...row});
     r.parseMode=parseModeOf(r);
     const id=r.id||recordId(r);
-    await setDoc(doc(db,roomPath,id),{...r,key:id,warning:warning(r),updatedAt:serverTimestamp()},{merge:false});
-    count++;
+    await setDoc(doc(db,roomPath,id),{
+      ...r,
+      key:id,
+      warning:warning(r),
+      updatedAt:serverTimestamp()
+    },{merge:false});
+    n++;
   }
-  return count;
+  return n;
 }
+
 
 
 
@@ -605,27 +635,44 @@ setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if
 function previewPaste(){
   try{
     const rows=parsePasteText();
-    $("pastePreview").textContent=previewRows(rows);
+    if(!rows.length){
+      setText("pastePreview","미리보기: 저장할 기록이 없습니다.");
+      return [];
+    }
+    setText("pastePreview",pastePreviewText(rows));
     return rows;
   }catch(e){
-    $("pastePreview").textContent="파싱 오류: "+(e&&e.message?e.message:e);
+    setText("pastePreview","파싱 오류: "+((e&&e.message)?e.message:e));
+    console.error(e);
     return [];
   }
 }
 
 
+
 async function savePaste(){
   try{
+    if(!roomPath){
+      alert("먼저 입장하세요.");
+      show("join");
+      return;
+    }
     const rows=parsePasteText();
-    if(!rows.length){alert("저장할 기록이 없습니다.");return;}
+    if(!rows.length){
+      setText("pastePreview","저장할 기록이 없습니다.");
+      alert("저장할 기록이 없습니다.");
+      return;
+    }
     const n=await saveRows(rows);
-    $("pastePreview").textContent=`저장 완료: ${n}개`;
+    setText("pastePreview",`저장 완료: ${n}개`);
     $("pasteLog").value="";
-    await render();
+    show("records");
   }catch(e){
+    setText("pastePreview","저장 오류: "+((e&&e.message)?e.message:e));
     showError("로그붙여넣기 저장",e);
   }
 }
+
 
 
 function todayRows(){const d=localDate();return allRows.filter(r=>(r.dt||"").slice(0,10)===d)}
@@ -977,6 +1024,16 @@ function parserSelfTest(){
 }
 
 
+function pastePreviewText(rows){
+  if(!rows||!rows.length) return "기록 없음";
+  return rows.slice(0,80).map((r,i)=>{
+    const vals=[];
+    ["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{
+      if(r[k]!==null&&r[k]!==undefined&&r[k]!=="") vals.push(`${k}:${r[k]}`);
+    });
+    return `${i+1}. ${r.dt||""} [${r.type||""}] ${parseModeOf(r)} ${vals.join(" / ")}\n${stripKey(r.memo||"")}`;
+  }).join("\n\n")+(rows.length>80?`\n\n...외 ${rows.length-80}개`:"");
+}
 Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,parserSelfTest});
 </script>
 </body>
