@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 timeOf 복구판 v52</title>
+<title>아버지 케어로그 필수함수 점검판 v54</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 timeOf 복구판 v52</h1><div id="roomStatus" class="small">입장 전 · v52</div></header>
+<header><h1>아버지 케어로그 필수함수 점검판 v54</h1><div id="roomStatus" class="small">입장 전 · v54</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -199,12 +199,17 @@ setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if
 
 
 
-function setText(id,text){const el=$(id); if(el) el.textContent=text;}
+function setText(id,text){
+  const el=$(id);
+  if(el) el.textContent=text;
+}
+
 function showError(where,e){
   const msg=(e&&e.message)?e.message:String(e||"알 수 없는 오류");
   console.error(where,e);
   alert(where+" 오류: "+msg);
 }
+
 function textToLines(text){
   return String(text||"").replace(/\r/g,"").split(/\n/).map(x=>x.trim()).filter(Boolean);
 }
@@ -384,32 +389,39 @@ function inferType(s){
 
 
 
+
 function actualActionContext(s){
   s=String(s||"");
-  if(/(필요|고려|여부|원함|원한다|요청|설명|전달|질문|계획|예정|주의|기준|판단)/.test(s) && !/(시행|실시|완료|함|했다|진행|시작|재시작)/.test(s)) return false;
+  if(/(필요|고려|여부|원함|원한다|요청|설명|전달|질문|계획|예정|주의|기준|판단)/.test(s) &&
+     !/(시행|실시|완료|함|했다|진행|시작|재시작)/.test(s)) return false;
   return /(시행|실시|완료|함|했다|진행|시작|재시작|석션\s*\(|네뷸|토닥이|구강청소|ROM)/.test(s);
 }
+
 function hasStructuredValue(r){
   return ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob"].some(k=>r[k]!==null&&r[k]!==undefined&&r[k]!=="");
 }
 function parseModeOf(r){
-  if(r.parseMode) return r.parseMode;
-  if(r.source==="manual") return "수동입력";
-  if(hasStructuredValue(r) || ["네뷸","토닥이","석션","구강청소","수동적 ROM","체위변경","구토"].includes(r.type)) return "구조화";
+  if(r&&r.parseMode) return r.parseMode;
+  if(r&&r.source==="manual") return "수동입력";
+  if(!r) return "메모전용";
+  const structured=["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob"].some(k=>r[k]!==null&&r[k]!==undefined&&r[k]!=="");
+  if(structured || ["네뷸","토닥이","석션","구강청소","수동적 ROM","체위변경","구토"].includes(r.type)) return "구조화";
   return "메모전용";
 }
+
 
 function actionTypes(s){
   s=String(s||"");
   if(!actualActionContext(s)) return [];
   const a=[];
-  if(/네뷸|nebul/i.test(s))a.push("네뷸");
-  if(/토닥|타진|percussion/i.test(s))a.push("토닥이");
-  if(/석션|suction/i.test(s))a.push("석션");
-  if(/구강\s*청소|구강청소|구강케어/i.test(s))a.push("구강청소");
-  if(/ROM|수동\s*ROM|수동적\s*ROM/i.test(s))a.push("수동적 ROM");
+  if(/네뷸|nebul/i.test(s)) a.push("네뷸");
+  if(/토닥|타진|percussion/i.test(s)) a.push("토닥이");
+  if(/석션|suction/i.test(s)) a.push("석션");
+  if(/구강\s*청소|구강청소|구강케어/i.test(s)) a.push("구강청소");
+  if(/ROM|수동\s*ROM|수동적\s*ROM/i.test(s)) a.push("수동적 ROM");
   return [...new Set(a)];
 }
+
 
 function breathStatus(s){
   const neg=/없음|없다|없고|아직\s*없|없다고|아니오|아님|이상\s*없|특이\s*없/.test(s);
@@ -451,6 +463,29 @@ function annotateSuction(r){
   if(info&&!r.memo.includes("[석션횟수:"))r.memo+=`\n[석션횟수: ${info} — 분자=깊은 석션 횟수, 분모=깊은 석션 횟수+얕은 석션 횟수]`;
   return r;
 }
+
+function positionOf(s){
+  s=String(s||"");
+  if(/좌측위|왼쪽|left/i.test(s)) return "좌측위";
+  if(/우측위|오른쪽|right/i.test(s)) return "우측위";
+  if(/정상위|앙와위|바로|supine/i.test(s)) return "정상위";
+  if(/반좌위|sitting|앉/i.test(s)) return "반좌위";
+  return "";
+}
+
+
+function positionDetail(s){
+  s=String(s||"");
+  const a=[];
+  const hob=s.match(/HOB\s*(\d+(?:[.,]\d+)?)/i) || s.match(/hob\s*(\d+(?:[.,]\d+)?)/i);
+  if(hob) a.push("HOB "+String(hob[1]).replace(",","."));
+  if(/lateral/i.test(s)) a.push("lateral");
+  if(/휠체어/.test(s)) a.push("휠체어");
+  if(/다리\s*거상|leg\s*elevation/i.test(s)) a.push("다리 거상");
+  return a.join(" / ");
+}
+
+
 function parseLine(text,date){
   const s=String(text||"").trim();
   const time=timeOf(s);
@@ -496,6 +531,7 @@ function parseLine(text,date){
 
 
 
+
 function expandRecord(r){
   const acts=actionTypes(r.memo);
   if(acts.length>=2 && actualActionContext(r.memo)){
@@ -509,9 +545,11 @@ function expandRecord(r){
   return [annotateSuction(r)];
 }
 
+
 function isMeal(r){
-  return r.type==="식사/수분" || r.feed!==null || r.water!==null;
+  return !!r && (r.type==="식사/수분" || r.feed!==null || r.water!==null);
 }
+
 
 function recordId(r){
   const dt=(r.dt||"").slice(0,16);
@@ -534,10 +572,13 @@ function timeOf(s){
   return "00:00";
 }
 
+
 function startsTime(s){
   s=String(s||"").trim();
-  return /^[ㅇ○\-•*.\s]*\d{1,2}\s*[:：]\s*\d{1,2}/.test(s) || /^[ㅇ○\-•*.\s]*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?/.test(s);
+  return /^[ㅇ○\-•*.\s]*\d{1,2}\s*[:：]\s*\d{1,2}/.test(s) ||
+         /^[ㅇ○\-•*.\s]*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?/.test(s);
 }
+
 
 function cleanEvent(s){
   s=String(s||"").trim();
@@ -546,6 +587,7 @@ function cleanEvent(s){
     .replace(/^[ㅇ○\-•*.\s]*(\d{1,2})\s*시\s*(\d{1,2})?\s*분?\s*[-~–—]?\s*/,"")
     .trim();
 }
+
 
 function parseTextToRows(text){
   const lines=String(text||"").replace(/\r/g,"").split("\n").map(x=>x.trim()).filter(Boolean);
@@ -568,11 +610,13 @@ function parseTextToRows(text){
 
 
 
+
 function parsePasteText(){
   const text=val("pasteLog");
   if(!text) return [];
   return parseTextToRows(text);
 }
+
 
 
 
@@ -595,6 +639,7 @@ async function saveRows(rows){
   }
   return n;
 }
+
 
 
 
@@ -673,6 +718,7 @@ function previewPaste(){
 
 
 
+
 async function savePaste(){
   try{
     if(!roomPath){
@@ -695,6 +741,7 @@ async function savePaste(){
     showError("로그붙여넣기 저장",e);
   }
 }
+
 
 
 
@@ -1058,17 +1105,27 @@ function pastePreviewText(rows){
   }).join("\n\n")+(rows.length>80?`\n\n...외 ${rows.length-80}개`:"");
 }
 
+
 function pasteSelfTest(){
   const sample=`2026.6/20 토 326일차
+ㅇ8:22 우측위 lateral hob 30
+ㅇ8:50 혈압 124/72, 체온 36.6도, 산소포화도 94
+ㅇ8:55~ 아침식사 330ml(400kcal), 물 200ml
 ㅇ23:55 재개한 저녁식사 270ml(kcal), 물 120ml`;
   const rows=parseTextToRows(sample);
   return {
-    ok: rows.length>0 && rows[0].dt.startsWith("2026-06-20T23:55") && rows[0].feed===270 && rows[0].water===120,
+    ok: rows.length>=4 &&
+      rows.some(r=>r.position==="우측위" && /HOB 30/i.test(r.positionDetail||"")) &&
+      rows.some(r=>r.sbp===124 && r.dbp===72 && r.temp===36.6 && r.spo2===94) &&
+      rows.some(r=>r.feed===330 && r.water===200) &&
+      rows.some(r=>r.dt.startsWith("2026-06-20T23:55") && r.feed===270 && r.water===120),
     rows
   };
 }
 
-Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,parserSelfTest,pasteSelfTest,timeOf,startsTime,cleanEvent});
+
+
+Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,parserSelfTest,pasteSelfTest,timeOf,startsTime,cleanEvent,positionOf,positionDetail});
 </script>
 </body>
 </html>
