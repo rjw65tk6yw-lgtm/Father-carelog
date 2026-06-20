@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 로그붙여넣기 재복구판 v51</title>
+<title>아버지 케어로그 timeOf 복구판 v52</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 로그붙여넣기 재복구판 v51</h1><div id="roomStatus" class="small">입장 전 · v51</div></header>
+<header><h1>아버지 케어로그 timeOf 복구판 v52</h1><div id="roomStatus" class="small">입장 전 · v52</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -283,8 +283,8 @@ function dateHeader(line){
   return "";
 }
 
-function startsTime(s){return /^[ㅇoO]?\s*\d{1,2}\s*[:시]\s*\d{0,2}/.test(String(s||"").trim())}
-function cleanEvent(s){return String(s||"").trim().replace(/^[ㅇoO]\s*/,"").trim()}
+
+
 function eventTime(s){const m=cleanEvent(s).match(/^(\d{1,2})\s*[:시]\s*(\d{2})?/);return m?`${pad(+m[1])}:${pad(+(m[2]||0))}`:""}
 function stripKey(s){return String(s||"").split(/\n/).filter(x=>!/^\s*key\s*:/i.test(x)).join("\n").trim()}
 function firstNum(re,s){const m=String(s).match(re);return m?Number(String(m[1]).replace(",",".")):null}
@@ -522,6 +522,29 @@ function recordId(r){
   const base=[dt,r.type,r.spo2??"",r.hr??"",r.temp??"",r.weight??"",stripKey(r.memo)].join("|");
   let h=0;for(let i=0;i<base.length;i++){h=((h<<5)-h)+base.charCodeAt(i);h|=0}
   return "r_"+Math.abs(h).toString(36);
+}
+
+
+function timeOf(s){
+  s=String(s||"").trim();
+  let m=s.match(/^[ㅇ○\-•*.\s]*(\d{1,2})\s*[:：]\s*(\d{1,2})/);
+  if(m) return `${pad(Math.min(23,Number(m[1])))}:${pad(Math.min(59,Number(m[2])))}`;
+  m=s.match(/^[ㅇ○\-•*.\s]*(\d{1,2})\s*시\s*(\d{1,2})?\s*분?/);
+  if(m) return `${pad(Math.min(23,Number(m[1])))}:${pad(Math.min(59,Number(m[2]||0)))}`;
+  return "00:00";
+}
+
+function startsTime(s){
+  s=String(s||"").trim();
+  return /^[ㅇ○\-•*.\s]*\d{1,2}\s*[:：]\s*\d{1,2}/.test(s) || /^[ㅇ○\-•*.\s]*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?/.test(s);
+}
+
+function cleanEvent(s){
+  s=String(s||"").trim();
+  return s
+    .replace(/^[ㅇ○\-•*.\s]*(\d{1,2})\s*[:：]\s*(\d{1,2})\s*[-~–—]?\s*/,"")
+    .replace(/^[ㅇ○\-•*.\s]*(\d{1,2})\s*시\s*(\d{1,2})?\s*분?\s*[-~–—]?\s*/,"")
+    .trim();
 }
 
 function parseTextToRows(text){
@@ -1034,7 +1057,18 @@ function pastePreviewText(rows){
     return `${i+1}. ${r.dt||""} [${r.type||""}] ${parseModeOf(r)} ${vals.join(" / ")}\n${stripKey(r.memo||"")}`;
   }).join("\n\n")+(rows.length>80?`\n\n...외 ${rows.length-80}개`:"");
 }
-Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,parserSelfTest});
+
+function pasteSelfTest(){
+  const sample=`2026.6/20 토 326일차
+ㅇ23:55 재개한 저녁식사 270ml(kcal), 물 120ml`;
+  const rows=parseTextToRows(sample);
+  return {
+    ok: rows.length>0 && rows[0].dt.startsWith("2026-06-20T23:55") && rows[0].feed===270 && rows[0].water===120,
+    rows
+  };
+}
+
+Object.assign(window,{show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,goPasteInput,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,parserSelfTest,pasteSelfTest,timeOf,startsTime,cleanEvent});
 </script>
 </body>
 </html>
