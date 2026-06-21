@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 백업탭 복구판</title>
+<title>아버지 케어로그 v42 오늘기록 수정판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 백업탭 복구판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 오늘기록 수정판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -412,40 +412,69 @@ function fillInputFromRecord(r){
 }
 
 function editRecord(id){
-  const r=allRows.find(x=>x.id===id);
-  if(!r){alert("수정할 기록을 찾지 못했습니다.");return;}
-  editingId=id;
-  fillInputFromRecord(r);
-  $("editStatus").textContent=`수정 중: ${r.dt||""} [${r.type||""}]`;
-  $("cancelEditBtn").style.display="inline-block";
+  const r = allRows.find(x => (x.id || x.key) === id);
+  if(!r){ alert("수정할 기록을 찾지 못했습니다."); return; }
+  setEditingId(id);
   show("input");
-  window.scrollTo({top:0,behavior:"smooth"});
+  const set = (id2, v) => { const el = $(id2); if(el) el.value = (v ?? ""); };
+  set("dt", (r.dt || "").slice(0,16));
+  set("type", r.type || "특이사항");
+  ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","positionDetail","breath"].forEach(k=>set(k,r[k]));
+  set("memo", stripKey(r.memo||""));
+  const st=$("editStatus"); if(st) st.textContent=`수정 중: ${r.dt||""} [${r.type||""}]`;
+  const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="inline-block";
 }
+
 
 function cancelEdit(){
-  editingId="";
-  $("editStatus").textContent="";
-  $("cancelEditBtn").style.display="none";
-  clearInput();
+  setEditingId("");
+  const st=$("editStatus"); if(st) st.textContent="";
+  const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="none";
+  if(typeof clearInput==="function") clearInput();
 }
 
+
 async function saveManual(){
-  const r={dt:val("dt")||nowInput(),type:val("type"),spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),weight:num("weight"),sbp:num("sbp"),dbp:num("dbp"),feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),position:val("position"),positionDetail:val("positionDetail"),breath:val("breath")||breathStatus(val("memo")),memo:val("memo"),authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
-  if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
-  if(editingId){
-    await setDoc(doc(db,roomPath,editingId),{...annotateSuction(r),key:editingId},{merge:false});
-    editingId="";
-    $("editStatus").textContent="";
-    $("cancelEditBtn").style.display="none";
-    clearInput();
-    alert("수정 저장했습니다.");
-    show("records");
-    return;
+  try{
+    if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
+    const r={
+      dt:val("dt")||nowInput(),
+      type:val("type")||"특이사항",
+      spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),weight:num("weight"),
+      sbp:num("sbp"),dbp:num("dbp"),
+      feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),
+      position:val("position"),positionDetail:val("positionDetail"),
+      breath:val("breath")||(typeof breathStatus==="function"?breathStatus(val("memo")):""),
+      memo:val("memo"),
+      source:"manual",
+      authorName:currentAuthor||"가족",
+      familyCode:currentCode
+    };
+    const editingId = getEditingId();
+    if(editingId){
+      const fixed=typeof annotateSuction==="function"?annotateSuction({...r,id:editingId}):{...r,id:editingId};
+      await setDoc(doc(db,roomPath,editingId),{...fixed,key:editingId,warning:typeof warning==="function"?warning(fixed):"",updatedAt:serverTimestamp()},{merge:false});
+      setEditingId("");
+      const st=$("editStatus"); if(st) st.textContent="";
+      const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="none";
+      if(typeof clearInput==="function") clearInput();
+      alert("수정 저장했습니다.");
+      show("records");
+      return;
+    }
+    if(typeof saveRows==="function") await saveRows([r]);
+    else {
+      const id=typeof recordId==="function"?recordId(r):String(Date.now());
+      await setDoc(doc(db,roomPath,id),{...r,key:id,updatedAt:serverTimestamp()},{merge:false});
+    }
+    if(typeof clearInput==="function") clearInput();
+    alert("저장했습니다.");
+  }catch(e){
+    if(typeof showError==="function") showError("직접 입력 저장",e);
+    else alert("직접 입력 저장 오류: "+((e&&e.message)?e.message:e));
   }
-  await saveRows([annotateSuction(r)]);
-  clearInput();
-  alert("저장했습니다.");
 }
+
 
 function clearInput(){
   ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","breath","memo"].forEach(id=>$(id).value="");
@@ -474,11 +503,33 @@ function summaryObj(date,rows){
 }
 function render(){
   if(currentCode) $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor} · 기록 ${allRows.length}개`;
-  const today=todayRows(), obj=summaryObj(localDate(),today);
-  $("todaySummary").innerHTML=Object.entries(obj).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("")+`<pre class="small">${obj.요약}</pre>`;
-  const rows=allRows.slice().reverse();
-  $("recordsList").innerHTML=rows.map(r=>`<div class="rec"><h3>${r.dt||""} [${r.type||""}] ${warning(r)?'<span class="warn">주의</span>':""}</h3><div class="small">${detail(r)}</div><div class="memo">${escapeHtml(stripKey(r.memo||""))}</div><button onclick="editRecord('${r.id}')">수정</button> <button class="danger" onclick="deleteRecord('${r.id}')">삭제</button></div>`).join("")||"<div class='note'>기록 없음</div>";
+  const today = typeof todayRows==="function" ? todayRows() : allRows.filter(r=>(r.dt||"").slice(0,10)===localDate());
+  const obj = typeof summaryObj==="function" ? summaryObj(localDate(), today) : {};
+  const ts=$("todaySummary");
+  if(ts){
+    ts.innerHTML = Object.keys(obj).length
+      ? Object.entries(obj).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("") + `<pre class="small">${obj.요약||""}</pre>`
+      : `<span class="pill">오늘 기록 ${today.length}개</span>`;
+  }
+  const makeRec=(r)=>{
+    const id=safeIdForButton(r.id||r.key||recordId(r));
+    const warn=(typeof warning==="function"&&warning(r))?'<span class="warn">주의</span>':"";
+    const memo=(typeof escapeHtml==="function")?escapeHtml(stripKey(r.memo||"")):stripKey(r.memo||"");
+    const d=(typeof detail==="function")?detail(r):"";
+    return `<div class="rec">
+      <h3>${r.dt||""} [${r.type||""}] ${warn}</h3>
+      <div class="small">${d}</div>
+      <div class="memo">${memo}</div>
+      <button onclick="editRecord('${id}')">수정</button>
+      <button class="danger" onclick="deleteRecord('${id}')">삭제</button>
+    </div>`;
+  };
+  const rl=$("recordsList");
+  if(rl) rl.innerHTML=allRows.slice().reverse().map(makeRec).join("")||"<div class='note'>기록 없음</div>";
+  const todayList=$("todayRecordsList")||$("todayList")||$("todayRecords");
+  if(todayList) todayList.innerHTML=today.slice().reverse().map(makeRec).join("")||"<div class='note'>오늘 기록 없음</div>";
 }
+
 function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 async function deleteRecord(id){const r=allRows.find(x=>x.id===id);const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";if(!confirm(`이 기록을 삭제할까요?\n\n${label}`))return;await deleteDoc(doc(db,roomPath,id))}
@@ -762,7 +813,16 @@ function goPasteInput(){
   }
 }
 
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals});
+function getEditingId(){
+  return globalThis._editingId || "";
+}
+function setEditingId(v){
+  globalThis._editingId = v || "";
+}
+function safeIdForButton(s){
+  return String(s??"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\n/g," ");
+}
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId});
 </script>
 </body>
 </html>
