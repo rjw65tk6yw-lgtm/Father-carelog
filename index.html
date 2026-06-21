@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 소금-water 수정판</title>
+<title>아버지 케어로그 v42 로직단순화판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 소금-water 수정판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 로직단순화판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -90,6 +90,38 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 
 
 
+
+
+<section id="screen-backup" style="display:none">
+<div class="card">
+<h2>백업</h2>
+<div class="note">
+v42 기준 백업 탭 복구. 파서/기록 저장 로직은 건드리지 않고, 빠져 있던 백업 화면 본문만 복구했다.
+</div>
+
+<h3>내보내기</h3>
+<div class="row">
+<button onclick="downloadEditableCsv()">수정용 CSV 내보내기</button>
+<button onclick="downloadDailySummaryCsv()">날짜별 요약 CSV 내보내기</button>
+<button onclick="downloadTodaySummaryCsv()">오늘 기록·요약 CSV 저장</button>
+</div>
+
+<h3>CSV 수정 반영</h3>
+<label>수정한 CSV 파일</label>
+<input id="csvFile" type="file" accept=".csv,text/csv">
+<div class="row">
+<button onclick="applyCsv(false)">CSV 수정 반영</button>
+<button onclick="applyCsv(true)">CSV 기준 동기화/삭제 포함</button>
+</div>
+
+<h3>요약 저장</h3>
+<div class="row">
+<button onclick="saveTodaySummaryByDate()">오늘 요약 저장/덮어쓰기</button>
+<button onclick="saveAllDailySummaries()">날짜별 요약 저장/덮어쓰기</button>
+<button onclick="collapseSameTimeMeals()">같은 시간 식사 중복 정리</button>
+</div>
+</div>
+</section>
 
 <section id="screen-gptin" style="display:none">
 <div class="card">
@@ -233,16 +265,10 @@ function isReportOnlyContext(s){
   s=String(s||"");
   return /(하루\s*평균|하루평균|평균|정도|말하였다|말함|설명|전달|보고|투석실|간호사에게|목표\s*UF|UF\s*\d|봐서\s*빼|혈압이\s*\d+대로|낮아져서)/.test(s);
 }
-function isActualMealLine(s){
-  s=String(s||"");
-  if(isReportOnlyContext(s) && !/^(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어|\d{1,2}\s*[:시].*(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어))/.test(cleanEvent(s))) return false;
-  return /(아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\n]*\d+(?:[.,]\d+)?\s*(?:mL|ml|cc)/.test(s);
-}
-function isActualWaterLine(s){
-  s=String(s||"");
-  if(isReportOnlyContext(s) && !/^(?:물|수분|\d{1,2}\s*[:시].*(?:물|수분))/.test(cleanEvent(s))) return false;
-  return /(?:물|수분)[^\n]*\d+(?:[.,]\d+)?\s*(?:mL|ml|cc)/.test(s);
-}
+
+
+
+
 function isActualOutputLine(s){
   s=String(s||"");
   if(isReportOnlyContext(s) && !/^(?:소변|대변|\d{1,2}\s*[:시].*(?:소변|대변))/.test(cleanEvent(s))) return false;
@@ -313,21 +339,53 @@ function annotateSuction(r){
   if(info&&!r.memo.includes("[석션횟수:"))r.memo+=`\n[석션횟수: ${info} — 분자=깊은 석션 횟수, 분모=깊은 석션 횟수+얕은 석션 횟수]`;
   return r;
 }
-function saltFormulaWaterBlock(s){
+
+
+
+
+function amountOf(labelRe,s){
+  const re=new RegExp(labelRe+"\\s*(?:량|총량|실제)?\\s*[:：=\\-]?\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:mL|ml|ML|cc)","i");
+  const m=String(s||"").match(re);
+  return m?Number(String(m[1]).replace(",",".")):null;
+}
+
+function saltFormulaContext(s){
   s=String(s||"");
   return /(소금|염분|나트륨|NaCl|Na\s*보충|salt)/i.test(s)
     && /(경관식|식사|피딩|뉴케어|메디웰|그린비아|formula|feeding)/i.test(s)
-    && /(타서|타\s*먹|녹여|섞어|혼합|넣어|같이|함께)/.test(s)
-    && !/(?:^|[\s,，])(?:물|수분|water)\s*(?:량|총량|실제)?\s*[:：=\-]?\s*\d+(?:[.,]\d+)?\s*(?:mL|ml|ML|cc)/i.test(s);
+    && /(타서|타\s*먹|녹여|섞어|혼합|넣어|같이|함께)/.test(s);
 }
+
 function explicitMealAmount(s){
   s=String(s||"");
-  const mealM=s.match(/(?:식사|경관식|아침식사|점심식사|저녁식사|피딩)\s*(?:량|총량|실제)?\s*[:：=\-]?\s*(\d+(?:[.,]\d+)?)\s*(?:mL|ml|ML|cc)/i);
-  const waterM=s.match(/(?:^|[\s,，])(?:물|수분|water)\s*(?:량|총량|실제)?\s*[:：=\-]?\s*(\d+(?:[.,]\d+)?)\s*(?:mL|ml|ML|cc)/i);
-  const meal=mealM?Number(String(mealM[1]).replace(",",".")):null;
-  const water=(saltFormulaWaterBlock(s) || !waterM) ? null : Number(String(waterM[1]).replace(",","."));
-  return {meal,feed:meal,water};
+  const meal=amountOf("(?:식사|경관식|아침식사|점심식사|저녁식사|피딩)",s);
+  const water=amountOf("(?:^|[\\s,，])(?:물|수분|water)",s);
+  return {
+    meal,
+    feed:meal,
+    water: saltFormulaContext(s) && water===null ? null : water
+  };
 }
+
+function isActualMealLine(s){
+  const a=explicitMealAmount(s);
+  return a.meal!==null || a.feed!==null || a.water!==null;
+}
+
+function isActualWaterLine(s){
+  return explicitMealAmount(s).water!==null;
+}
+
+function saltWaterSelfTest(){
+  const r1=parseTextToRows("2026.6/20 토\nㅇ14:30 소금 2g을 경관식 330mL에 타서 드림");
+  const r2=parseTextToRows("2026.6/20 토\nㅇ14:30 점심식사 330mL, 물 120mL");
+  return {
+    saltFormulaNotWater: r1.length>0 && (r1[0].water===null || r1[0].water===undefined),
+    explicitWaterKept: r2.length>0 && r2[0].water===120,
+    r1,r2
+  };
+}
+
 function parseLine(text,date){
   const s=cleanEvent(text), t=eventTime(s)||nowInput().slice(11,16);
   const urine=firstNum(/소변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
@@ -395,40 +453,69 @@ function fillInputFromRecord(r){
 }
 
 function editRecord(id){
-  const r=allRows.find(x=>x.id===id);
-  if(!r){alert("수정할 기록을 찾지 못했습니다.");return;}
-  editingId=id;
-  fillInputFromRecord(r);
-  $("editStatus").textContent=`수정 중: ${r.dt||""} [${r.type||""}]`;
-  $("cancelEditBtn").style.display="inline-block";
+  const r = allRows.find(x => (x.id || x.key) === id);
+  if(!r){ alert("수정할 기록을 찾지 못했습니다."); return; }
+  setEditingId(id);
   show("input");
-  window.scrollTo({top:0,behavior:"smooth"});
+  const set = (id2, v) => { const el = $(id2); if(el) el.value = (v ?? ""); };
+  set("dt", (r.dt || "").slice(0,16));
+  set("type", r.type || "특이사항");
+  ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","positionDetail","breath"].forEach(k=>set(k,r[k]));
+  set("memo", stripKey(r.memo||""));
+  const st=$("editStatus"); if(st) st.textContent=`수정 중: ${r.dt||""} [${r.type||""}]`;
+  const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="inline-block";
 }
+
 
 function cancelEdit(){
-  editingId="";
-  $("editStatus").textContent="";
-  $("cancelEditBtn").style.display="none";
-  clearInput();
+  setEditingId("");
+  const st=$("editStatus"); if(st) st.textContent="";
+  const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="none";
+  if(typeof clearInput==="function") clearInput();
 }
 
+
 async function saveManual(){
-  const r={dt:val("dt")||nowInput(),type:val("type"),spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),weight:num("weight"),sbp:num("sbp"),dbp:num("dbp"),feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),position:val("position"),positionDetail:val("positionDetail"),breath:val("breath")||breathStatus(val("memo")),memo:val("memo"),authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
-  if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
-  if(editingId){
-    await setDoc(doc(db,roomPath,editingId),{...annotateSuction(r),key:editingId},{merge:false});
-    editingId="";
-    $("editStatus").textContent="";
-    $("cancelEditBtn").style.display="none";
-    clearInput();
-    alert("수정 저장했습니다.");
-    show("records");
-    return;
+  try{
+    if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
+    const r={
+      dt:val("dt")||nowInput(),
+      type:val("type")||"특이사항",
+      spo2:num("spo2"),hr:num("hr"),temp:num("temp"),oxygen:num("oxygen"),weight:num("weight"),
+      sbp:num("sbp"),dbp:num("dbp"),
+      feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),
+      position:val("position"),positionDetail:val("positionDetail"),
+      breath:val("breath")||(typeof breathStatus==="function"?breathStatus(val("memo")):""),
+      memo:val("memo"),
+      source:"manual",
+      authorName:currentAuthor||"가족",
+      familyCode:currentCode
+    };
+    const editingId = getEditingId();
+    if(editingId){
+      const fixed=typeof annotateSuction==="function"?annotateSuction({...r,id:editingId}):{...r,id:editingId};
+      await setDoc(doc(db,roomPath,editingId),{...fixed,key:editingId,warning:typeof warning==="function"?warning(fixed):"",updatedAt:serverTimestamp()},{merge:false});
+      setEditingId("");
+      const st=$("editStatus"); if(st) st.textContent="";
+      const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="none";
+      if(typeof clearInput==="function") clearInput();
+      alert("수정 저장했습니다.");
+      show("records");
+      return;
+    }
+    if(typeof saveRows==="function") await saveRows([r]);
+    else {
+      const id=typeof recordId==="function"?recordId(r):String(Date.now());
+      await setDoc(doc(db,roomPath,id),{...r,key:id,updatedAt:serverTimestamp()},{merge:false});
+    }
+    if(typeof clearInput==="function") clearInput();
+    alert("저장했습니다.");
+  }catch(e){
+    if(typeof showError==="function") showError("직접 입력 저장",e);
+    else alert("직접 입력 저장 오류: "+((e&&e.message)?e.message:e));
   }
-  await saveRows([annotateSuction(r)]);
-  clearInput();
-  alert("저장했습니다.");
 }
+
 
 function clearInput(){
   ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","breath","memo"].forEach(id=>$(id).value="");
@@ -457,11 +544,33 @@ function summaryObj(date,rows){
 }
 function render(){
   if(currentCode) $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor} · 기록 ${allRows.length}개`;
-  const today=todayRows(), obj=summaryObj(localDate(),today);
-  $("todaySummary").innerHTML=Object.entries(obj).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("")+`<pre class="small">${obj.요약}</pre>`;
-  const rows=allRows.slice().reverse();
-  $("recordsList").innerHTML=rows.map(r=>`<div class="rec"><h3>${r.dt||""} [${r.type||""}] ${warning(r)?'<span class="warn">주의</span>':""}</h3><div class="small">${detail(r)}</div><div class="memo">${escapeHtml(stripKey(r.memo||""))}</div><button onclick="editRecord('${r.id}')">수정</button> <button class="danger" onclick="deleteRecord('${r.id}')">삭제</button></div>`).join("")||"<div class='note'>기록 없음</div>";
+  const today = typeof todayRows==="function" ? todayRows() : allRows.filter(r=>(r.dt||"").slice(0,10)===localDate());
+  const obj = typeof summaryObj==="function" ? summaryObj(localDate(), today) : {};
+  const ts=$("todaySummary");
+  if(ts){
+    ts.innerHTML = Object.keys(obj).length
+      ? Object.entries(obj).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("") + `<pre class="small">${obj.요약||""}</pre>`
+      : `<span class="pill">오늘 기록 ${today.length}개</span>`;
+  }
+  const makeRec=(r)=>{
+    const id=safeIdForButton(r.id||r.key||recordId(r));
+    const warn=(typeof warning==="function"&&warning(r))?'<span class="warn">주의</span>':"";
+    const memo=(typeof escapeHtml==="function")?escapeHtml(stripKey(r.memo||"")):stripKey(r.memo||"");
+    const d=(typeof detail==="function")?detail(r):"";
+    return `<div class="rec">
+      <h3>${r.dt||""} [${r.type||""}] ${warn}</h3>
+      <div class="small">${d}</div>
+      <div class="memo">${memo}</div>
+      <button onclick="editRecord('${id}')">수정</button>
+      <button class="danger" onclick="deleteRecord('${id}')">삭제</button>
+    </div>`;
+  };
+  const rl=$("recordsList");
+  if(rl) rl.innerHTML=allRows.slice().reverse().map(makeRec).join("")||"<div class='note'>기록 없음</div>";
+  const todayList=$("todayRecordsList")||$("todayList")||$("todayRecords");
+  if(todayList) todayList.innerHTML=today.slice().reverse().map(makeRec).join("")||"<div class='note'>오늘 기록 없음</div>";
 }
+
 function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 async function deleteRecord(id){const r=allRows.find(x=>x.id===id);const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";if(!confirm(`이 기록을 삭제할까요?\n\n${label}`))return;await deleteDoc(doc(db,roomPath,id))}
@@ -745,16 +854,17 @@ function goPasteInput(){
   }
 }
 
-function saltWaterSelfTest(){
-  const r1=parseTextToRows("2026.6/20 토\nㅇ14:30 소금 2g을 경관식 330mL에 타서 드림");
-  const r2=parseTextToRows("2026.6/20 토\nㅇ14:30 점심식사 330mL, 물 120mL");
-  return {
-    saltFormulaNotWater: r1.length>0 && (r1[0].water===null || r1[0].water===undefined),
-    explicitWaterKept: r2.length>0 && r2[0].water===120,
-    r1,r2
-  };
+function getEditingId(){
+  return globalThis._editingId || "";
 }
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,saltWaterSelfTest,saltFormulaWaterBlock});
+function setEditingId(v){
+  globalThis._editingId = v || "";
+}
+function safeIdForButton(s){
+  return String(s??"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\n/g," ");
+}
+
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext});
 </script>
 </body>
 </html>
