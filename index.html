@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 오늘기록 수정판</title>
+<title>아버지 케어로그 v42 로직단순화판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 오늘기록 수정판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 로직단순화판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -265,16 +265,10 @@ function isReportOnlyContext(s){
   s=String(s||"");
   return /(하루\s*평균|하루평균|평균|정도|말하였다|말함|설명|전달|보고|투석실|간호사에게|목표\s*UF|UF\s*\d|봐서\s*빼|혈압이\s*\d+대로|낮아져서)/.test(s);
 }
-function isActualMealLine(s){
-  s=String(s||"");
-  if(isReportOnlyContext(s) && !/^(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어|\d{1,2}\s*[:시].*(?:아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어))/.test(cleanEvent(s))) return false;
-  return /(아침식사|점심식사|저녁식사|식사|경관식|피딩|뉴케어)[^\n]*\d+(?:[.,]\d+)?\s*(?:mL|ml|cc)/.test(s);
-}
-function isActualWaterLine(s){
-  s=String(s||"");
-  if(isReportOnlyContext(s) && !/^(?:물|수분|\d{1,2}\s*[:시].*(?:물|수분))/.test(cleanEvent(s))) return false;
-  return /(?:물|수분)[^\n]*\d+(?:[.,]\d+)?\s*(?:mL|ml|cc)/.test(s);
-}
+
+
+
+
 function isActualOutputLine(s){
   s=String(s||"");
   if(isReportOnlyContext(s) && !/^(?:소변|대변|\d{1,2}\s*[:시].*(?:소변|대변))/.test(cleanEvent(s))) return false;
@@ -345,6 +339,53 @@ function annotateSuction(r){
   if(info&&!r.memo.includes("[석션횟수:"))r.memo+=`\n[석션횟수: ${info} — 분자=깊은 석션 횟수, 분모=깊은 석션 횟수+얕은 석션 횟수]`;
   return r;
 }
+
+
+
+
+function amountOf(labelRe,s){
+  const re=new RegExp(labelRe+"\\s*(?:량|총량|실제)?\\s*[:：=\\-]?\\s*(\\d+(?:[.,]\\d+)?)\\s*(?:mL|ml|ML|cc)","i");
+  const m=String(s||"").match(re);
+  return m?Number(String(m[1]).replace(",",".")):null;
+}
+
+function saltFormulaContext(s){
+  s=String(s||"");
+  return /(소금|염분|나트륨|NaCl|Na\s*보충|salt)/i.test(s)
+    && /(경관식|식사|피딩|뉴케어|메디웰|그린비아|formula|feeding)/i.test(s)
+    && /(타서|타\s*먹|녹여|섞어|혼합|넣어|같이|함께)/.test(s);
+}
+
+function explicitMealAmount(s){
+  s=String(s||"");
+  const meal=amountOf("(?:식사|경관식|아침식사|점심식사|저녁식사|피딩)",s);
+  const water=amountOf("(?:^|[\\s,，])(?:물|수분|water)",s);
+  return {
+    meal,
+    feed:meal,
+    water: saltFormulaContext(s) && water===null ? null : water
+  };
+}
+
+function isActualMealLine(s){
+  const a=explicitMealAmount(s);
+  return a.meal!==null || a.feed!==null || a.water!==null;
+}
+
+function isActualWaterLine(s){
+  return explicitMealAmount(s).water!==null;
+}
+
+function saltWaterSelfTest(){
+  const r1=parseTextToRows("2026.6/20 토\nㅇ14:30 소금 2g을 경관식 330mL에 타서 드림");
+  const r2=parseTextToRows("2026.6/20 토\nㅇ14:30 점심식사 330mL, 물 120mL");
+  return {
+    saltFormulaNotWater: r1.length>0 && (r1[0].water===null || r1[0].water===undefined),
+    explicitWaterKept: r2.length>0 && r2[0].water===120,
+    r1,r2
+  };
+}
+
 function parseLine(text,date){
   const s=cleanEvent(text), t=eventTime(s)||nowInput().slice(11,16);
   const urine=firstNum(/소변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
@@ -822,7 +863,8 @@ function setEditingId(v){
 function safeIdForButton(s){
   return String(s??"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\n/g," ");
 }
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId});
+
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext});
 </script>
 </body>
 </html>
