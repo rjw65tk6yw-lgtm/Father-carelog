@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 기록접기 전체폭판</title>
+<title>아버지 케어로그 v42 파일날짜 보정판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -43,7 +43,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 기록접기 전체폭판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 파일날짜 보정판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -245,20 +245,32 @@ function dateHeader(line){
   if(!s) return "";
   if(typeof startsTime==="function" && startsTime(s)) return "";
 
-  // 예정/재검/전달/설명 문장의 날짜는 기록 날짜가 아니다.
-  if(/(예정|재검|예약|다음|검사|진료|투석실|간호사에게|말하였다|설명|전달|보고)/.test(s)
-     && !/(^어제|^오늘|기록|일차|요약|로그)/.test(s)) return "";
+  // 본문/표 안의 수치가 날짜로 오인되는 것을 막는다.
+  // 예: 알부민 2.1, Hb 7.7, 2/10 VRE, 2/25 CRE, 2026-03-18~2026-05-19 문서 범위.
+  if(/(알부민|Hb|헤모글로빈|혈색소|albumin|CRP|WBC|Na|K|Cl|BUN|Cr|CRE|VRE|MRSA|대상포진|격리|사유)/i.test(s)
+     && !/^\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*(?:[월화수목금토일]|일|—|-|,|\s|$)/.test(s)) return "";
 
-  // 2026.6/18, 2026년 6월 18일, 26.6/18
-  let m=s.match(/(?:^|\s)(\d{2,4})\s*[.\-/년]\s*(\d{1,2})\s*[.\/월-]\s*(\d{1,2})(?:\s*일)?/);
+  // 문서 제목/기간 범위: 2026-03-18 ~ 2026-05-19 같은 줄은 날짜 헤더가 아니다.
+  if(/^\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*[~～]\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}/.test(s)) return "";
+
+  // 완전 날짜 헤더: 반드시 줄 맨 앞에서 시작해야 한다.
+  // 2026-03-28 토 — 242일차 / 2026.6/20 토 326일차 / 26.6/20
+  let m=s.match(/^\s*(\d{2,4})\s*[.\-/년]\s*(\d{1,2})\s*[.\/월-]\s*(\d{1,2})(?:\s*일)?/);
   if(m){
     const yy=normalizeYear(m[1]), mm=+m[2], dd=+m[3];
-    if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return `${yy}-${pad(mm)}-${pad(dd)}`;
+    if(mm>=1&&mm<=12&&dd>=1&&dd<=31){
+      const rest=s.slice(m[0].length).trim();
+      // 날짜 단독, 요일, 일차, 기록/요약/로그, 대시가 따라오는 경우만 헤더로 인정.
+      if(!rest || /^[월화수목금토일](?:요일)?(?:\s|$)/.test(rest) || /^(?:-|—|–|,)/.test(rest) || /(일차|기록|요약|로그)/.test(rest)){
+        return `${yy}-${pad(mm)}-${pad(dd)}`;
+      }
+    }
   }
 
-  // 6/18 목요일 기록, 어제 6/18 목요일, 6월 18일 기록
-  m=s.match(/(?:^|\s)(\d{1,2})\s*(?:[.\/월])\s*(\d{1,2})(?:\s*일)?/);
-  if(m && /(^어제|^오늘|기록|일차|요약|로그|월요일|화요일|수요일|목요일|금요일|토요일|일요일|[월화수목금토일]\s*$)/.test(s)){
+  // 연도 없는 날짜 헤더는 더 엄격하게: 줄 맨 앞 + slash/월만 허용. 
+  // 2.1 같은 검사수치 오인을 막기 위해 점(.) 형식은 여기서 허용하지 않는다.
+  m=s.match(/^\s*(\d{1,2})\s*(?:\/|월\s*)(\d{1,2})(?:\s*일)?/);
+  if(m && /(^어제|^오늘|기록|일차|요약|로그|월요일|화요일|수요일|목요일|금요일|토요일|일요일|[월화수목금토일](?:요일)?(?:\s|$))/.test(s)){
     const mm=+m[1], dd=+m[2];
     if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return `${new Date().getFullYear()}-${pad(mm)}-${pad(dd)}`;
   }
@@ -271,9 +283,28 @@ function dateHeader(line){
   return "";
 }
 
-function startsTime(s){return /^[ㅇoO]?\s*\d{1,2}\s*[:시]\s*\d{0,2}/.test(String(s||"").trim())}
-function cleanEvent(s){return String(s||"").trim().replace(/^[ㅇoO]\s*/,"").trim()}
-function eventTime(s){const m=cleanEvent(s).match(/^(\d{1,2})\s*[:시]\s*(\d{2})?/);return m?`${pad(+m[1])}:${pad(+(m[2]||0))}`:""}
+
+function startsTime(s){
+  s=String(s||"").trim();
+  return /^[ㅇoO○\-•*.\s~～]*\d{1,2}\s*[:：]\s*\d{1,2}/.test(s) ||
+         /^[ㅇoO○\-•*.\s~～]*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?/.test(s);
+}
+
+function cleanEvent(s){
+  return String(s||"").trim()
+    .replace(/^[ㅇoO○\-•*.\s~～]*/,"")
+    .trim();
+}
+
+function eventTime(s){
+  const x=cleanEvent(s);
+  let m=x.match(/^(\d{1,2})\s*[:：]\s*(\d{1,2})/);
+  if(m) return `${pad(Math.min(23,+m[1]))}:${pad(Math.min(59,+m[2]))}`;
+  m=x.match(/^(\d{1,2})\s*시\s*(\d{1,2})?\s*분?/);
+  if(m) return `${pad(Math.min(23,+m[1]))}:${pad(Math.min(59,+(m[2]||0)))}`;
+  return "";
+}
+
 function stripKey(s){return String(s||"").split(/\n/).filter(x=>!/^\s*key\s*:/i.test(x)).join("\n").trim()}
 function firstNum(re,s){const m=String(s).match(re);return m?Number(String(m[1]).replace(",",".")):null}
 
@@ -431,24 +462,48 @@ function recordId(r){
   return "r_"+Math.abs(h).toString(36);
 }
 
+function isLooseRecordLine(line){
+  const s=cleanEvent(line);
+  if(!s) return false;
+  if(/(복원 수준|요약:|시간\/구간|복원 기록|상태평가|해석|자료 부족|원문|문서|목록|기준|한계|기간|핵심 흐름|주요 위험|보강 필요|원자료|반영 내용)/.test(s)) return false;
+  if(/(알부민|Hb|헤모글로빈|혈색소|VRE|CRE|MRSA|대상포진|격리 사유)/i.test(s) && !startsTime(s)) return false;
+  // 시간 없는 행은 실제 수량/처치가 명확하고 짧을 때만 별도 기록으로 허용.
+  return s.length < 80 && /(소변|대변|식사|경관식|물\s*\d|수분\s*\d|네뷸|토닥|석션|구강청소|ROM|혈압|체온|산소포화도|SpO)/.test(s);
+}
 function parseTextToRows(text){
   const lines=String(text||"").split(/\n/).map(x=>x.trim()).filter(Boolean);
-  let cur=localDate(), pending=null, rows=[];
+  let cur="", pending=null, rows=[];
   const flush=()=>{
     if(!pending) return;
-    rows.push(...expandRecord(parseLine(pending.text,pending.date)));
+    rows.push(...expandRecord(parseLine(pending.text,pending.date||localDate())));
     pending=null;
   };
   for(const line of lines){
     const dh=dateHeader(line);
     if(dh){flush();cur=dh;continue;}
-    if(startsTime(line)){flush();pending={date:cur,text:cleanEvent(line)};continue;}
-    if(pending) pending.text+="\n"+line;
-    else pending={date:cur,text:line};
+
+    if(startsTime(line)){
+      flush();
+      pending={date:cur||localDate(),text:cleanEvent(line)};
+      continue;
+    }
+
+    // 시간행 뒤에 이어진 설명은 그 기록의 메모로 붙인다.
+    if(pending){
+      pending.text+="\n"+line;
+      continue;
+    }
+
+    // 파일 연동 DOCX의 일반 문장/표/목차는 기록으로 만들지 않는다.
+    // 다만 시간 없는 짧은 실제 기록만 예외적으로 저장한다.
+    if(cur && isLooseRecordLine(line)){
+      pending={date:cur,text:cleanEvent(line)};
+    }
   }
   flush();
   return rows;
 }
+
 
 function parsePasteText(){
   return dedupeRows(parseTextToRows($("pasteLog").value));
@@ -1043,18 +1098,16 @@ function clearGptIn(){
 }
 
 function parseGptIncomingText(){
-  return parseTextToRows(val("gptInText"));
+  return dedupeRows(parseTextToRows(val("gptInText")));
 }
 
-function previewRowsCompact(rows,limit=50){
+
+function previewRowsCompact(rows,limit=80){
+  rows=dedupeRows(rows||[]);
   if(!rows.length) return "읽어낸 기록이 없습니다. 날짜 헤더와 시간 기록 형식을 확인하세요.";
-  const shown=rows.slice(0,limit).map((r,i)=>{
-    const memo=trimText(stripKey(r.memo||"").replace(/\n+/g," / "),120);
-    return `${i+1}. ${r.dt} [${r.type}] ${memo}`;
-  }).join("\n");
-  const more=rows.length>limit?`\n\n… ${rows.length-limit}개 더 있음. 저장 시 전체 ${rows.length}개 반영.`:"";
-  return shown+more;
+  return groupedPreviewText(rows);
 }
+
 
 function previewGptIn(){
   const text=val("gptInText");
@@ -1068,13 +1121,15 @@ function previewGptIn(){
 async function saveGptIn(){
   const rows=parseGptIncomingText();
   if(!rows.length){alert("저장할 기록이 없습니다.");return;}
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)).filter(Boolean))];
-  const msg=`ChatGPT 결과 ${rows.length}개 기록을 앱에 저장/덮어쓰기 할까요?\n날짜: ${dates.slice(0,8).join(", ")}${dates.length>8?" 외":""}`;
+  const groups=groupRowsByDate(rows);
+  const dates=groups.map(g=>g.date);
+  const msg=`파일에서 읽은 ${rows.length}개 기록 / ${groups.length}일치를 앱에 저장/덮어쓰기 할까요?\n날짜: ${dates.slice(0,8).join(", ")}${dates.length>8?" 외":""}`;
   if(!confirm(msg))return;
   setGptInStatus("저장 중...");
   try{
     await saveRows(rows);
-    alert("연동: Notes/ChatGPT ↔ 앱했습니다.");
+    const savedSummaries=await savePastedDailySummaries(rows);
+    alert(`연동 파일 → 앱 저장 완료\n기록 ${rows.length}개\n날짜별 요약 ${savedSummaries}일치`);
     clearGptIn();
     show("records");
   }catch(e){
@@ -1082,6 +1137,7 @@ async function saveGptIn(){
     alert("저장 실패: "+e.message);
   }
 }
+
 
 
 
@@ -1139,7 +1195,29 @@ function dedupeSelfTest(){
     rows
   };
 }
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest});
+function fileDateFixSelfTest(){
+  const sample=`아버지 기록 복원본
+2026-03-18 ~ 2026-05-19
+1. 복원 기준과 한계
+격리 사유 2/10 VRE, 2/25 CRE, 2/25 대상포진, 3/18 MRSA.
+4/2 알부민 2.1, Hb 7.7 관련 설명.
+2026-03-28 토 — 242일차
+복원 수준: 세부 로그 확인
+02:30 석션 1/3 깊은.
+03:00경 대변 50g, 소변 50g. 좌측위 lateral HOB 30.
+2026-04-02 목 — 247일차
+09:30 나상근 회진: 알부민 2.1로 2병 투여 예정, Hb 7.7 설명.
+13:45~15:45 점심식사 330mL(400kcal), 물 160mL.`;
+  const rows=parseTextToRows(sample);
+  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)))];
+  return {
+    ok: dates.includes("2026-03-28") && dates.includes("2026-04-02") && !dates.includes("2026-02-01") && !dates.includes("2026-02-10"),
+    dates,
+    rows,
+    preview:groupedPreviewText(rows)
+  };
+}
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine});
 </script>
 </body>
 </html>
