@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 날짜별정리 중복덮어쓰기판</title>
+<title>아버지 케어로그 v42 기록접기판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -23,10 +23,16 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 @media(max-width:640px){.grid{grid-template-columns:1fr}.tabs button{min-width:48%}}
 .statusline{font-size:12px;color:#4b5563;margin-top:6px}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .pastefocus{outline:3px solid #93c5fd;background:#eff6ff}
+
+.folderHead{width:100%;text-align:left;font-weight:700;margin:6px 0;background:#eef2ff}
+.folderBody{margin-left:10px;border-left:3px solid #e5e7eb;padding-left:10px}
+.dayHead{background:#f9fafb}
+.quickRow{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 날짜별정리 중복덮어쓰기판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 기록접기판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -670,6 +676,64 @@ function summaryObj(date,rows){
   const text=[`${date} 요약`,`기록 ${rows.length}개`,`식사 ${sum(rows,"feed")}mL / 물 ${sum(rows,"water")}mL`,`소변 ${sum(rows,"urine")} / 대변 ${sum(rows,"stool")}`,`네뷸 ${count(rows,"네뷸")}회 / 토닥이 ${count(rows,"토닥이")}회 / 석션 ${count(rows,"석션")}회 / 구강청소 ${count(rows,"구강청소")}회 / ROM ${count(rows,"수동적 ROM")}회`,latestW?`체중 ${latestW}kg`:""].filter(Boolean).join("\n");
   return {날짜:date,기록수:rows.length,식사:sum(rows,"feed"),물:sum(rows,"water"),소변:sum(rows,"urine"),대변:sum(rows,"stool"),네뷸:count(rows,"네뷸"),토닥이:count(rows,"토닥이"),석션:count(rows,"석션"),구강청소:count(rows,"구강청소"),수동적ROM:count(rows,"수동적 ROM"),체중:latestW,요약:text};
 }
+
+function folderKey(s){
+  return String(s||"").replace(/[^0-9A-Za-z_-]/g,"_");
+}
+
+function recordsTree(groups){
+  const tree={};
+  for(const g of groups||[]){
+    const [y,m]=String(g.date||"날짜없음").split("-");
+    const yy=y||"날짜없음";
+    const mm=m||"기타";
+    tree[yy] ||= {};
+    tree[yy][mm] ||= [];
+    tree[yy][mm].push(g);
+  }
+  return tree;
+}
+
+function toggleFolder(id){
+  const el=$(id);
+  if(!el) return;
+  el.style.display = el.style.display==="none" ? "block" : "none";
+}
+
+function openRecentRecordFolders(){
+  const groups=groupRowsByDate(allRows);
+  if(!groups.length) return;
+  const last=groups[groups.length-1].date;
+  const [y,m]=last.split("-");
+  ["year_"+folderKey(y),"month_"+folderKey(y+"_"+m),"day_"+folderKey(last)].forEach(id=>{
+    const el=$(id);
+    if(el) el.style.display="block";
+  });
+}
+
+function closeAllRecordFolders(){
+  document.querySelectorAll("[data-folder-body='1']").forEach(el=>el.style.display="none");
+}
+
+function openAllRecordFolders(){
+  document.querySelectorAll("[data-folder-body='1']").forEach(el=>el.style.display="block");
+}
+
+function recordFolderSelfTest(){
+  const sample=[
+    {dt:"2026-06-20T01:20", type:"식사/수분", memo:"저녁식사 270ml", feed:270, water:null},
+    {dt:"2026-06-21T03:50", type:"대소변", memo:"소변 75g", urine:75},
+    {dt:"2026-07-01T03:50", type:"대소변", memo:"소변 100g", urine:100}
+  ];
+  const groups=groupRowsByDate(sample);
+  const tree=recordsTree(groups);
+  return {
+    ok: !!tree["2026"] && !!tree["2026"]["06"] && !!tree["2026"]["07"],
+    groups,
+    tree
+  };
+}
+
 function render(){
   if(currentCode) $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor} · 기록 ${allRows.length}개`;
   const today = typeof todayRows==="function" ? todayRows() : allRows.filter(r=>(r.dt||"").slice(0,10)===localDate());
@@ -695,26 +759,59 @@ function render(){
     </div>`;
   };
 
-  const makeDateSection=(g)=>{
+  const makeDaySection=(g)=>{
     const o=summaryObj(g.date,g.rows);
     const pills=Object.entries(o).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("");
+    const dayId="day_"+folderKey(g.date);
     return `<div class="card">
-      <h2>${g.date} 기록·요약</h2>
-      <div>${pills}</div>
-      <pre class="small">${escapeHtml(o.요약||"")}</pre>
-      ${g.rows.slice().reverse().map(makeRec).join("")}
+      <button class="folderHead dayHead" onclick="toggleFolder('${dayId}')">📄 ${g.date} 기록·요약 (${g.rows.length}개)</button>
+      <div id="${dayId}" data-folder-body="1" class="folderBody" style="display:none">
+        <div>${pills}</div>
+        <pre class="small">${escapeHtml(o.요약||"")}</pre>
+        ${g.rows.slice().reverse().map(makeRec).join("")}
+      </div>
     </div>`;
   };
 
   const rl=$("recordsList");
   if(rl){
     const groups=groupRowsByDate(allRows).reverse();
-    rl.innerHTML=groups.map(makeDateSection).join("")||"<div class='note'>기록 없음</div>";
+    const tree=recordsTree(groups);
+    const years=Object.keys(tree).sort().reverse();
+    if(!years.length){
+      rl.innerHTML="<div class='note'>기록 없음</div>";
+    }else{
+      const htmlTree=years.map(y=>{
+        const yearId="year_"+folderKey(y);
+        const months=Object.keys(tree[y]).sort().reverse();
+        const yearCount=months.reduce((a,m)=>a+tree[y][m].reduce((b,g)=>b+g.rows.length,0),0);
+        const monthHtml=months.map(m=>{
+          const monthId="month_"+folderKey(y+"_"+m);
+          const monthCount=tree[y][m].reduce((a,g)=>a+g.rows.length,0);
+          return `<div>
+            <button class="folderHead" onclick="toggleFolder('${monthId}')">📁 ${m}월 (${monthCount}개)</button>
+            <div id="${monthId}" data-folder-body="1" class="folderBody" style="display:none">
+              ${tree[y][m].map(makeDaySection).join("")}
+            </div>
+          </div>`;
+        }).join("");
+        return `<div class="card">
+          <button class="folderHead" onclick="toggleFolder('${yearId}')">📂 ${y}년 (${yearCount}개)</button>
+          <div id="${yearId}" data-folder-body="1" class="folderBody" style="display:none">${monthHtml}</div>
+        </div>`;
+      }).join("");
+      rl.innerHTML=`<div class="quickRow">
+        <button onclick="openRecentRecordFolders()">최근 날짜 열기</button>
+        <button onclick="openAllRecordFolders()">전체 펼치기</button>
+        <button onclick="closeAllRecordFolders()">전체 접기</button>
+      </div>${htmlTree}`;
+    }
   }
 
   const todayList=$("todayRecordsList")||$("todayList")||$("todayRecords");
   if(todayList) todayList.innerHTML=today.slice().reverse().map(makeRec).join("")||"<div class='note'>오늘 기록 없음</div>";
 }
+
 
 
 function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
@@ -1028,7 +1125,7 @@ function dedupeSelfTest(){
     rows
   };
 }
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest});
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest});
 </script>
 </body>
 </html>
