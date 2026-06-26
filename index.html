@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 기록접기판</title>
+<title>아버지 케어로그 v42 기록접기 전체폭판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -29,10 +29,21 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 .dayHead{background:#f9fafb}
 .quickRow{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
 
+/* 기록접기 전체폭 override */
+
+.folderHead{width:100%;text-align:left;font-weight:700;margin:6px 0;background:#eef2ff}
+.folderBody{margin-left:0!important;border-left:0!important;padding-left:0!important}
+.folderGroup{margin:8px 0}
+.monthHead{background:#f3f4f6}
+.dayHead{background:#f9fafb}
+.dayBody{margin:0!important;padding:0!important}
+.quickRow{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}
+.levelTag{display:inline-block;min-width:48px;color:#6b7280;font-size:13px}
+
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 기록접기판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 기록접기 전체폭판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -763,12 +774,14 @@ function render(){
     const o=summaryObj(g.date,g.rows);
     const pills=Object.entries(o).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("");
     const dayId="day_"+folderKey(g.date);
-    return `<div class="card">
-      <button class="folderHead dayHead" onclick="toggleFolder('${dayId}')">📄 ${g.date} 기록·요약 (${g.rows.length}개)</button>
-      <div id="${dayId}" data-folder-body="1" class="folderBody" style="display:none">
-        <div>${pills}</div>
-        <pre class="small">${escapeHtml(o.요약||"")}</pre>
-        ${g.rows.slice().reverse().map(makeRec).join("")}
+    return `<div class="folderGroup">
+      <button class="folderHead dayHead" onclick="toggleFolder('${dayId}')"><span class="levelTag">일</span>📄 ${g.date} 기록·요약 (${g.rows.length}개)</button>
+      <div id="${dayId}" data-folder-body="1" class="dayBody" style="display:none">
+        <div class="card">
+          <div>${pills}</div>
+          <pre class="small">${escapeHtml(o.요약||"")}</pre>
+          ${g.rows.slice().reverse().map(makeRec).join("")}
+        </div>
       </div>
     </div>`;
   };
@@ -788,15 +801,15 @@ function render(){
         const monthHtml=months.map(m=>{
           const monthId="month_"+folderKey(y+"_"+m);
           const monthCount=tree[y][m].reduce((a,g)=>a+g.rows.length,0);
-          return `<div>
-            <button class="folderHead" onclick="toggleFolder('${monthId}')">📁 ${m}월 (${monthCount}개)</button>
+          return `<div class="folderGroup">
+            <button class="folderHead monthHead" onclick="toggleFolder('${monthId}')"><span class="levelTag">월</span>📁 ${m}월 (${monthCount}개)</button>
             <div id="${monthId}" data-folder-body="1" class="folderBody" style="display:none">
               ${tree[y][m].map(makeDaySection).join("")}
             </div>
           </div>`;
         }).join("");
         return `<div class="card">
-          <button class="folderHead" onclick="toggleFolder('${yearId}')">📂 ${y}년 (${yearCount}개)</button>
+          <button class="folderHead" onclick="toggleFolder('${yearId}')"><span class="levelTag">연</span>📂 ${y}년 (${yearCount}개)</button>
           <div id="${yearId}" data-folder-body="1" class="folderBody" style="display:none">${monthHtml}</div>
         </div>`;
       }).join("");
@@ -811,6 +824,7 @@ function render(){
   const todayList=$("todayRecordsList")||$("todayList")||$("todayRecords");
   if(todayList) todayList.innerHTML=today.slice().reverse().map(makeRec).join("")||"<div class='note'>오늘 기록 없음</div>";
 }
+
 
 
 
