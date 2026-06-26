@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 로직단순화판</title>
+<title>아버지 케어로그 v42 날짜별정리판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 로직단순화판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 날짜별정리판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -69,7 +69,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 
 <div class="card">
 <h2>로그 붙여넣기</h2>
-<div class="note">날짜 헤더 뒤에 시간 기록을 붙여넣으면 자동 분류한다. 메모 안의 예정일·2/2·1/3은 날짜로 보지 않는다.</div>
+<div class="note">날짜 헤더 뒤에 시간 기록을 붙여넣으면 날짜별로 기록과 요약을 묶어 미리보기/저장한다. 메모 안의 예정일·2/2·1/3은 날짜로 보지 않는다.</div>
 <textarea id="pasteLog" placeholder="2026.6/16 화 322일차&#10;ㅇ14:30 점심식사 330ml, 물 195ml&#10;- 다음 Na 재검 예정: 26.6/22 월요일"></textarea>
 <div class="row"><button onclick="previewPaste()">미리보기</button><button class="primary" onclick="savePaste()">붙여넣기 저장/덮어쓰기</button></div>
 <pre id="pastePreview" class="small"></pre>
@@ -524,8 +524,98 @@ function clearInput(){
 setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if($("gptEnd")) $("gptEnd").value=d;},0);
 }
 
-function previewPaste(){const rows=parsePasteText();$("pastePreview").textContent=rows.map((r,i)=>`${i+1}. ${r.dt} [${r.type}] ${stripKey(r.memo)}`).join("\n\n")}
-async function savePaste(){const rows=parsePasteText();if(!rows.length){alert("저장할 기록이 없습니다.");return} if(!confirm(`${rows.length}개 기록을 저장/덮어쓰기 할까요?`))return; await saveRows(rows);$("pasteLog").value="";$("pastePreview").textContent="";alert("저장했습니다.");show("records")}
+
+function groupRowsByDate(rows){
+  const map={};
+  for(const r of rows||[]){
+    const d=(r.dt||"").slice(0,10)||"날짜없음";
+    (map[d] ||= []).push(r);
+  }
+  return Object.keys(map).sort().map(date=>({
+    date,
+    rows: map[date].sort((a,b)=>(a.dt||"").localeCompare(b.dt||""))
+  }));
+}
+
+function oneLineRecord(r,i){
+  const time=(r.dt||"").slice(11,16);
+  const d=typeof detail==="function" ? detail(r) : "";
+  const memo=stripKey(r.memo||"").replace(/\n+/g," / ");
+  return `${i+1}. ${time} [${r.type||""}] ${d}${d?" / ":""}${memo}`;
+}
+
+function groupedPreviewText(rows){
+  const groups=groupRowsByDate(rows);
+  if(!groups.length) return "저장할 기록이 없습니다.";
+  const total=rows.length;
+  const head=`총 ${total}개 기록 / ${groups.length}일치`;
+  const body=groups.map(g=>{
+    const o=summaryObj(g.date,g.rows);
+    const lines=[
+      `\n===== ${g.date} (${g.rows.length}개) =====`,
+      o.요약,
+      "",
+      ...g.rows.map((r,i)=>oneLineRecord(r,i))
+    ];
+    return lines.join("\n");
+  }).join("\n");
+  return head+"\n"+body;
+}
+
+async function savePastedDailySummaries(rows){
+  if(!currentCode) return 0;
+  const groups=groupRowsByDate(rows);
+  let n=0;
+  for(const g of groups){
+    if(g.date==="날짜없음") continue;
+    const o=summaryObj(g.date,g.rows);
+    await setDoc(doc(db,`families/${currentCode}/dailySummaries`,g.date),{
+      ...o,
+      source:"paste-date-group",
+      updatedAt:serverTimestamp()
+    },{merge:false});
+    n++;
+  }
+  return n;
+}
+
+function dateGroupSelfTest(){
+  const sample=`2026.6/20 토 326일차
+ㅇ1:20 저녁식사 270ml, 물 120ml
+ㅇ3:50 소변 75g
+2026.6/21 일 327일차
+ㅇ4:00 소변 100g
+ㅇ8:00 아침식사 330ml, 물 200ml`;
+  const rows=parseTextToRows(sample);
+  const groups=groupRowsByDate(rows);
+  return {
+    ok: groups.length===2 && groups[0].date==="2026-06-20" && groups[1].date==="2026-06-21",
+    groupCount: groups.length,
+    rowsCount: rows.length,
+    preview: groupedPreviewText(rows),
+    groups
+  };
+}
+
+function previewPaste(){
+  const rows=parsePasteText();
+  $("pastePreview").textContent=groupedPreviewText(rows);
+}
+
+async function savePaste(){
+  const rows=parsePasteText();
+  if(!rows.length){alert("저장할 기록이 없습니다.");return}
+  const groups=groupRowsByDate(rows);
+  const msg=`${rows.length}개 기록 / ${groups.length}일치를 저장하고 날짜별 요약도 저장할까요?`;
+  if(!confirm(msg))return;
+  await saveRows(rows);
+  const savedSummaries=await savePastedDailySummaries(rows);
+  $("pasteLog").value="";
+  $("pastePreview").textContent="";
+  alert(`저장했습니다.\n기록 ${rows.length}개\n날짜별 요약 ${savedSummaries}일치`);
+  show("records");
+}
+
 
 function joinFamily(){
   currentAuthor=val("authorName")||"가족"; currentCode=val("familyCode")||"3434"; roomPath=`families/${currentCode}/records`;
@@ -552,6 +642,7 @@ function render(){
       ? Object.entries(obj).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("") + `<pre class="small">${obj.요약||""}</pre>`
       : `<span class="pill">오늘 기록 ${today.length}개</span>`;
   }
+
   const makeRec=(r)=>{
     const id=safeIdForButton(r.id||r.key||recordId(r));
     const warn=(typeof warning==="function"&&warning(r))?'<span class="warn">주의</span>':"";
@@ -565,11 +656,28 @@ function render(){
       <button class="danger" onclick="deleteRecord('${id}')">삭제</button>
     </div>`;
   };
+
+  const makeDateSection=(g)=>{
+    const o=summaryObj(g.date,g.rows);
+    const pills=Object.entries(o).filter(([k])=>k!=="요약").map(([k,v])=>`<span class="pill">${k}: ${v}</span>`).join("");
+    return `<div class="card">
+      <h2>${g.date} 기록·요약</h2>
+      <div>${pills}</div>
+      <pre class="small">${escapeHtml(o.요약||"")}</pre>
+      ${g.rows.slice().reverse().map(makeRec).join("")}
+    </div>`;
+  };
+
   const rl=$("recordsList");
-  if(rl) rl.innerHTML=allRows.slice().reverse().map(makeRec).join("")||"<div class='note'>기록 없음</div>";
+  if(rl){
+    const groups=groupRowsByDate(allRows).reverse();
+    rl.innerHTML=groups.map(makeDateSection).join("")||"<div class='note'>기록 없음</div>";
+  }
+
   const todayList=$("todayRecordsList")||$("todayList")||$("todayRecords");
   if(todayList) todayList.innerHTML=today.slice().reverse().map(makeRec).join("")||"<div class='note'>오늘 기록 없음</div>";
 }
+
 
 function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
@@ -864,7 +972,7 @@ function safeIdForButton(s){
   return String(s??"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\n/g," ");
 }
 
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext});
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest});
 </script>
 </body>
 </html>
