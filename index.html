@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 날짜별정리판</title>
+<title>아버지 케어로그 v42 날짜별정리 중복덮어쓰기판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -26,7 +26,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 날짜별정리판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 날짜별정리 중복덮어쓰기판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -434,8 +434,9 @@ function parseTextToRows(text){
 }
 
 function parsePasteText(){
-  return parseTextToRows(val("pasteLog"));
+  return dedupeRows(parseTextToRows($("pasteLog").value));
 }
+
 
 async function saveRows(rows){
   if(!roomPath){alert("먼저 입장하세요.");show("join");return}
@@ -544,11 +545,44 @@ function oneLineRecord(r,i){
   return `${i+1}. ${time} [${r.type||""}] ${d}${d?" / ":""}${memo}`;
 }
 
+
+function normalizeRecordText(s){
+  return stripKey(String(s||""))
+    .replace(/\s+/g," ")
+    .replace(/[，、]/g,",")
+    .trim();
+}
+
+function duplicateKeyOfRow(r){
+  return [
+    (r.dt||"").slice(0,16),
+    r.type||"",
+    normalizeRecordText(r.memo||"")
+  ].join("|");
+}
+
+function dedupeRows(rows){
+  const map=new Map();
+  let removed=0;
+  for(const r of rows||[]){
+    const k=duplicateKeyOfRow(r);
+    if(map.has(k)) removed++;
+    map.set(k,r); // 같은 날짜·시간·종류·내용이면 뒤 기록이 앞 기록을 덮어씀
+  }
+  const deduped=Array.from(map.values()).sort((a,b)=>(a.dt||"").localeCompare(b.dt||""));
+  deduped._removedDuplicates=removed;
+  deduped._originalCount=(rows||[]).length;
+  return deduped;
+}
+
 function groupedPreviewText(rows){
+  rows=dedupeRows(rows);
   const groups=groupRowsByDate(rows);
   if(!groups.length) return "저장할 기록이 없습니다.";
   const total=rows.length;
-  const head=`총 ${total}개 기록 / ${groups.length}일치`;
+  const removed=rows._removedDuplicates||0;
+  const original=rows._originalCount||total;
+  const head=`총 ${total}개 기록 / ${groups.length}일치${removed?` (중복 ${removed}개 덮어쓰기, 원본 ${original}개)`:""}`;
   const body=groups.map(g=>{
     const o=summaryObj(g.date,g.rows);
     const lines=[
@@ -561,6 +595,7 @@ function groupedPreviewText(rows){
   }).join("\n");
   return head+"\n"+body;
 }
+
 
 async function savePastedDailySummaries(rows){
   if(!currentCode) return 0;
@@ -603,18 +638,21 @@ function previewPaste(){
 }
 
 async function savePaste(){
-  const rows=parsePasteText();
+  const rawRows=parseTextToRows($("pasteLog").value);
+  const rows=dedupeRows(rawRows);
   if(!rows.length){alert("저장할 기록이 없습니다.");return}
   const groups=groupRowsByDate(rows);
-  const msg=`${rows.length}개 기록 / ${groups.length}일치를 저장하고 날짜별 요약도 저장할까요?`;
+  const removed=rows._removedDuplicates||0;
+  const msg=`${rows.length}개 기록 / ${groups.length}일치를 저장하고 날짜별 요약도 저장할까요?${removed?`\n중복 ${removed}개는 같은 시간·같은 내용으로 보고 덮어쓰기 처리합니다.`:""}`;
   if(!confirm(msg))return;
   await saveRows(rows);
   const savedSummaries=await savePastedDailySummaries(rows);
   $("pasteLog").value="";
   $("pastePreview").textContent="";
-  alert(`저장했습니다.\n기록 ${rows.length}개\n날짜별 요약 ${savedSummaries}일치`);
+  alert(`저장했습니다.\n기록 ${rows.length}개\n날짜별 요약 ${savedSummaries}일치${removed?`\n중복 덮어쓰기 ${removed}개`:""}`);
   show("records");
 }
+
 
 
 function joinFamily(){
@@ -972,7 +1010,25 @@ function safeIdForButton(s){
   return String(s??"").replace(/\\/g,"\\\\").replace(/'/g,"\\'").replace(/\n/g," ");
 }
 
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest});
+function dedupeSelfTest(){
+  const sample=`2026.6/20 토 326일차
+ㅇ1:20 저녁식사 270ml, 물 120ml
+ㅇ1:20 저녁식사 270ml, 물 120ml
+ㅇ3:50 소변 75g
+2026.6/21 일 327일차
+ㅇ3:50 소변 75g`;
+  const raw=parseTextToRows(sample);
+  const rows=dedupeRows(raw);
+  return {
+    ok: raw.length===4 && rows.length===3 && rows._removedDuplicates===1,
+    rawCount:raw.length,
+    dedupedCount:rows.length,
+    removed:rows._removedDuplicates,
+    preview:groupedPreviewText(rows),
+    rows
+  };
+}
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest});
 </script>
 </body>
 </html>
