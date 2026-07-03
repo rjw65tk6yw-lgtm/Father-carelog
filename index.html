@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 연도구분판</title>
+<title>아버지 케어로그 v42 연동연도구분판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -54,7 +54,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 연도구분판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 연동연도구분판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -186,6 +186,17 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </div>
 
 <label>파일에서 읽은 내용</label>
+
+<div class="yearBox">
+  <h3>연동 파일 가져오기 기본 연도</h3>
+  <div class="note">파일을 불러온 뒤에도 여기서 연도를 바꾸고 미리보기를 다시 누르면, 연도 없는 날짜가 선택한 연도로 다시 정리된다.</div>
+  <div class="grid">
+    <div><label>기본 연도</label><select id="gptImportYearMode" onchange="syncImportYearBox('gpt')"><option value="2026">2026년</option><option value="2025">2025년</option><option value="custom">직접 입력</option></select></div>
+    <div><label>직접 입력 연도</label><input id="gptImportYearCustom" inputmode="numeric" placeholder="예: 2025" value="2026" oninput="syncImportYearBox('gpt')"></div>
+  </div>
+  <div class="row"><button onclick="previewGptIn()">선택한 연도로 다시 미리보기</button></div>
+</div>
+
 <textarea id="gptInText" style="min-height:180px" oninput="gptInTextChanged()" placeholder="파일을 읽으면 내용이 여기에 표시됩니다. 직접 붙여넣기는 입력 탭의 로그붙여넣기를 사용하세요."></textarea>
 
 <div class="row">
@@ -275,21 +286,27 @@ function normalizeYear(y){
   return n;
 }
 
-function syncImportYearBox(){
-  const mode=$("importYearMode")?.value || String(new Date().getFullYear());
-  const custom=$("importYearCustom");
-  if(custom){
-    custom.disabled = mode !== "custom";
-    if(mode !== "custom") custom.value = mode;
-  }
+function syncImportYearBox(from){
+  const a=$("importYearMode"), b=$("gptImportYearMode");
+  const ac=$("importYearCustom"), bc=$("gptImportYearCustom");
+  let mode=(from==="gpt"?b?.value:a?.value)||a?.value||b?.value||String(new Date().getFullYear());
+  let customVal=mode==="custom"?((from==="gpt"?bc?.value:ac?.value)||ac?.value||bc?.value||String(new Date().getFullYear())):mode;
+  if(a) a.value=mode;
+  if(b) b.value=mode;
+  if(ac){ac.disabled=mode!=="custom"; ac.value=customVal;}
+  if(bc){bc.disabled=mode!=="custom"; bc.value=customVal;}
+  const st=$("gptInStatus");
+  if(st && val("gptInText")) st.textContent=`기본 연도 ${importBaseYear()}년 선택됨. 미리보기를 다시 누르면 이 연도로 재분석됩니다.`;
 }
+
 function importBaseYear(){
-  const mode=$("importYearMode")?.value || String(new Date().getFullYear());
-  const raw = mode==="custom" ? ($("importYearCustom")?.value || "") : mode;
-  const y = Number(String(raw).replace(/[^0-9]/g,""));
+  const mode=$("gptImportYearMode")?.value || $("importYearMode")?.value || String(new Date().getFullYear());
+  const raw=mode==="custom"?($("gptImportYearCustom")?.value || $("importYearCustom")?.value || ""):mode;
+  const y=Number(String(raw).replace(/[^0-9]/g,""));
   if(y>=2000 && y<=2100) return y;
   return new Date().getFullYear();
 }
+
 function dateHeader(line){
   const s=String(line||"").trim();
   if(!s) return "";
@@ -1246,6 +1263,7 @@ function parseGptIncomingText(){
 }
 
 
+
 function previewRowsCompact(rows,limit=80){
   const raw=val("gptInText");
   rows=dedupeRows(rows||[]);
@@ -1256,13 +1274,16 @@ function previewRowsCompact(rows,limit=80){
 
 
 function previewGptIn(){
-  const text=val("gptInText");
-  if(!text){$("gptInPreview").textContent="";setGptInStatus("");return;}
   const rows=parseGptIncomingText();
-  $("gptInPreview").textContent=previewRowsCompact(rows);
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)).filter(Boolean))];
-  setGptInStatus(`읽은 글자 ${text.length.toLocaleString()}자 · 기록 ${rows.length}개 · 날짜 ${dates.length}개`);
+  const status=`기본 연도 ${importBaseYear()}년 기준으로 미리보기`;
+  setGptInStatus(status);
+  const el=$("gptInPreview") || $("gptPreview") || $("gptInStatus");
+  if(el){
+    if(el.id==="gptInStatus") el.textContent=status+"\n\n"+previewRowsCompact(rows);
+    else el.innerHTML=previewRowsCompact(rows);
+  }
 }
+
 
 async function saveGptIn(){
   const rawText=val("gptInText");
@@ -1388,7 +1409,26 @@ function yearImportSelfTest(){
     dates, rows
   };
 }
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings});
+function linkTabYearSelfTest(){
+  const oldMode=$("gptImportYearMode")?.value || $("importYearMode")?.value;
+  const oldCustom=$("gptImportYearCustom")?.value || $("importYearCustom")?.value;
+  if($("gptImportYearMode")) $("gptImportYearMode").value="2025";
+  if($("gptImportYearCustom")) $("gptImportYearCustom").value="2025";
+  syncImportYearBox("gpt");
+  const txt=$("gptInText"), oldTxt=txt?txt.value:"";
+  if(txt) txt.value=`6/20 토 100일차
+ㅇ3:50 소변 75g
+2026.6/21 일 101일차
+ㅇ4:00 소변 100g`;
+  const rows=parseGptIncomingText();
+  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)))].sort();
+  if(txt) txt.value=oldTxt;
+  if($("gptImportYearMode")) $("gptImportYearMode").value=oldMode||"2026";
+  if($("gptImportYearCustom")) $("gptImportYearCustom").value=oldCustom||"2026";
+  syncImportYearBox("gpt");
+  return {ok:dates.includes("2025-06-20")&&dates.includes("2026-06-21"),dates,rows};
+}
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest});
 </script>
 </body>
 </html>
