@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 연동연도구분판</title>
+<title>아버지 케어로그 v42 사진영상삭제판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -51,10 +51,19 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 
 .yearBox{border:1px solid #c7d2fe;background:#eef2ff;border-radius:14px;padding:10px;margin:10px 0}
 .yearBox .row{align-items:end}
+
+.mediaBox{border:1px solid #d1d5db;background:#f9fafb;border-radius:14px;padding:10px;margin:10px 0}
+.mediaGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-top:8px}
+.mediaThumb{border:1px solid #e5e7eb;border-radius:12px;padding:6px;background:white}
+.mediaThumb img{width:100%;max-height:180px;object-fit:contain;border-radius:8px}
+.mediaThumb video{width:100%;max-height:220px;border-radius:8px}
+.mediaLink{font-size:13px;word-break:break-all}
+
+.mediaDelete{margin-top:6px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 연동연도구분판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 사진영상삭제판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -92,7 +101,14 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 <div><label>호흡</label><input id="breath" placeholder="그르렁 없음/있음 등"></div>
 </div>
 <label>메모</label><textarea id="memo"></textarea>
-<div id="editStatus" class="note"></div><div class="row"><button class="primary" onclick="saveManual()">저장</button><button onclick="clearInput()">비우기</button><button id="cancelEditBtn" style="display:none" onclick="cancelEdit()">수정 취소</button></div>
+<div id="editStatus" class="note"></div><div class="row">
+<div class="mediaBox">
+  <h3>사진/영상 첨부</h3>
+  <div class="note">직접 입력 기록에 사진·영상을 최대 3개까지 첨부한다. 사진/짧은 영상 권장. 1개당 50MB 초과 파일은 막는다.</div>
+  <input id="mediaFiles" type="file" accept="image/*,video/*" multiple>
+</div>
+
+<button class="primary" onclick="saveManual()">저장</button><button onclick="clearInput()">비우기</button><button id="cancelEditBtn" style="display:none" onclick="cancelEdit()">수정 취소</button></div>
 </div>
 
 <div class="card">
@@ -236,6 +252,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
 
 const firebaseConfig={
   apiKey:"AIzaSyCOdone0ckHZmh6sPCYEYgiOupy4qF0yyg",
@@ -247,6 +264,7 @@ const firebaseConfig={
   measurementId:"G-978SPMWVJ7"
 };
 const app=initializeApp(firebaseConfig);
+const storage=getStorage(app);
 const db=getFirestore(app);
 
 let currentCode="", currentAuthor="", roomPath="", allRows=[], unsub=null, editingId="", renderQueued=false;
@@ -624,25 +642,38 @@ async function saveManual(){
       authorName:currentAuthor||"가족",
       familyCode:currentCode
     };
-    const editingId = getEditingId();
+    const editingId=getEditingId();
+    const id=editingId || (typeof recordId==="function"?recordId(r):String(Date.now()));
+    const files=mediaFiles();
+    if(files.length) {
+      const ok=confirm(`사진/영상 ${files.length}개를 업로드하고 기록에 첨부할까요?`);
+      if(!ok) return;
+    }
+    const uploaded=await uploadMediaFiles(id);
+    if(uploaded.length) r.media=uploaded;
+
     if(editingId){
+      let existingMedia=[];
+      const old=(allRows||[]).find(x=>(x.id||x.key||recordId(x))===editingId);
+      if(old && old.media && old.media.length) existingMedia=old.media;
+      if(existingMedia.length || uploaded.length) r.media=[...existingMedia,...uploaded];
       const fixed=typeof annotateSuction==="function"?annotateSuction({...r,id:editingId}):{...r,id:editingId};
       await setDoc(doc(db,roomPath,editingId),{...fixed,key:editingId,warning:typeof warning==="function"?warning(fixed):"",updatedAt:serverTimestamp()},{merge:false});
       setEditingId("");
       const st=$("editStatus"); if(st) st.textContent="";
       const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="none";
       if(typeof clearInput==="function") clearInput();
+      clearMediaInput();
       alert("수정 저장했습니다.");
       show("records");
       return;
     }
+
     if(typeof saveRows==="function") await saveRows([r]);
-    else {
-      const id=typeof recordId==="function"?recordId(r):String(Date.now());
-      await setDoc(doc(db,roomPath,id),{...r,key:id,updatedAt:serverTimestamp()},{merge:false});
-    }
+    else await setDoc(doc(db,roomPath,id),{...r,key:id,updatedAt:serverTimestamp()},{merge:false});
     if(typeof clearInput==="function") clearInput();
-    alert("저장했습니다.");
+    clearMediaInput();
+    alert(uploaded.length?`저장했습니다. 첨부 ${uploaded.length}개 포함.`:"저장했습니다.");
   }catch(e){
     if(typeof showError==="function") showError("직접 입력 저장",e);
     else alert("직접 입력 저장 오류: "+((e&&e.message)?e.message:e));
@@ -650,11 +681,14 @@ async function saveManual(){
 }
 
 
+
 function clearInput(){
   ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","breath","memo"].forEach(id=>$(id).value="");
   $("positionDetail").value="";
   $("dt").value=nowInput();
 setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if($("gptEnd")) $("gptEnd").value=d;},0);
+
+  clearMediaInput();
 }
 
 
@@ -959,6 +993,58 @@ function recordFolderSelfTest(){
     groups,
     tree
   };
+}
+
+
+function mediaFiles(){
+  const input=$("mediaFiles");
+  return input ? Array.from(input.files||[]) : [];
+}
+function safeFileName(name){
+  return String(name||"file").replace(/[^\w가-힣.\-]+/g,"_").slice(0,80);
+}
+async function uploadMediaFiles(recordId){
+  const files=mediaFiles();
+  if(!files.length) return [];
+  if(files.length>3) throw new Error("첨부파일은 한 기록당 최대 3개까지만 가능합니다.");
+  const maxEach=50*1024*1024;
+  for(const f of files){
+    if(!/^image\/|^video\//.test(f.type||"")) throw new Error("사진/영상 파일만 첨부할 수 있습니다: "+f.name);
+    if(f.size>maxEach) throw new Error("파일이 너무 큽니다. 1개당 50MB 이하로 줄여주세요: "+f.name);
+  }
+  const out=[];
+  for(const f of files){
+    const path=`rooms/${currentCode||"unknown"}/media/${recordId}/${Date.now()}_${safeFileName(f.name)}`;
+    const r=storageRef(storage,path);
+    await uploadBytes(r,f,{contentType:f.type||"application/octet-stream"});
+    const url=await getDownloadURL(r);
+    out.push({name:f.name,type:f.type||"",size:f.size||0,path,url,uploadedAt:new Date().toISOString()});
+  }
+  return out;
+}
+function mediaHtml(r){
+  const list=r.media||r.attachments||[];
+  if(!list.length) return "";
+  const recId=r.id||r.key||(typeof recordId==="function"?recordId(r):"");
+  const items=list.map((m,idx)=>{
+    const name=escapeHtml(m.name||"첨부파일");
+    const url=m.url||"";
+    const typ=m.type||"";
+    const path=m.path||"";
+    const deleteBtn=`<button class="mediaDelete" onclick="deleteMediaAttachment('${safeIdForButton(recId)}',${idx})">첨부 삭제</button>`;
+    if(/^image\//.test(typ)) return `<div class="mediaThumb"><a href="${url}" target="_blank"><img src="${url}" alt="${name}"></a><div class="mediaLink">${name}</div>${deleteBtn}</div>`;
+    if(/^video\//.test(typ)) return `<div class="mediaThumb"><video controls src="${url}"></video><div class="mediaLink"><a href="${url}" target="_blank">${name} 열기</a></div>${deleteBtn}</div>`;
+    return `<div class="mediaThumb"><div class="mediaLink"><a href="${url}" target="_blank">${name} 열기</a></div>${deleteBtn}</div>`;
+  }).join("");
+  return `<div class="mediaGrid">${items}</div>`;
+}
+
+function clearMediaInput(){
+  const input=$("mediaFiles");
+  if(input) input.value="";
+}
+function mediaUploadSelfTest(){
+  return {ok:typeof uploadMediaFiles==="function" && typeof mediaHtml==="function" && !!$("mediaFiles"), storageReady:typeof storage!=="undefined"};
 }
 
 function render(){
@@ -1428,7 +1514,43 @@ function linkTabYearSelfTest(){
   syncImportYearBox("gpt");
   return {ok:dates.includes("2025-06-20")&&dates.includes("2026-06-21"),dates,rows};
 }
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest});
+async function deleteMediaAttachment(recordSafeId,idx){
+  try{
+    if(!roomPath){alert("먼저 입장하세요.");return;}
+    const rec=(allRows||[]).find(r=>safeIdForButton(r.id||r.key||(typeof recordId==="function"?recordId(r):""))===recordSafeId);
+    if(!rec){alert("기록을 찾지 못했습니다.");return;}
+    const id=rec.id||rec.key||(typeof recordId==="function"?recordId(rec):"");
+    const list=[...(rec.media||rec.attachments||[])];
+    const m=list[idx];
+    if(!m){alert("첨부파일을 찾지 못했습니다.");return;}
+    const ok=confirm(`첨부파일을 삭제할까요?\n\n${m.name||"첨부파일"}\n\n기록은 남고 사진/영상만 삭제됩니다.`);
+    if(!ok) return;
+
+    let storageDeleted=false;
+    if(m.path){
+      try{
+        await deleteObject(storageRef(storage,m.path));
+        storageDeleted=true;
+      }catch(e){
+        const keepGoing=confirm("Storage 실제 파일 삭제에 실패했습니다.\n권한 문제일 수 있습니다.\n\n그래도 기록 목록에서 첨부 링크만 제거할까요?");
+        if(!keepGoing) throw e;
+      }
+    }
+    list.splice(idx,1);
+    await setDoc(doc(db,roomPath,id),{...rec,media:list,attachments:list,key:id,updatedAt:serverTimestamp()},{merge:false});
+    alert(storageDeleted?"첨부파일을 삭제했습니다.":"기록에서 첨부 링크를 제거했습니다. Storage 파일은 권한 문제로 남아 있을 수 있습니다.");
+  }catch(e){
+    if(typeof showError==="function") showError("첨부 삭제",e);
+    else alert("첨부 삭제 오류: "+((e&&e.message)?e.message:e));
+  }
+}
+function mediaDeleteSelfTest(){
+  return {
+    ok: typeof deleteMediaAttachment==="function" && typeof deleteObject!=="undefined" && typeof mediaHtml==="function",
+    hasDeleteImport: typeof deleteObject!=="undefined"
+  };
+}
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest});
 </script>
 </body>
 </html>
