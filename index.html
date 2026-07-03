@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 안전미리보기판</title>
+<title>아버지 케어로그 v42 연도구분판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -48,10 +48,13 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 .countTable th{background:#f3f4f6}
 .advancedBox{border:1px dashed #f59e0b;background:#fffbeb;border-radius:14px;padding:10px;margin-top:10px}
 
+
+.yearBox{border:1px solid #c7d2fe;background:#eef2ff;border-radius:14px;padding:10px;margin:10px 0}
+.yearBox .row{align-items:end}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 안전미리보기판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 연도구분판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -95,6 +98,16 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 <div class="card">
 <h2>로그 붙여넣기</h2>
 <div class="note">날짜 헤더 뒤에 시간 기록을 붙여넣으면 날짜별로 기록과 요약을 묶어 미리보기/저장한다. 메모 안의 예정일·2/2·1/3은 날짜로 보지 않는다.</div>
+
+<div class="yearBox">
+  <h3>가져오기 기본 연도</h3>
+  <div class="note">연도가 없는 날짜, 예: 6/20 토, 6월 20일 기록을 어느 해로 저장할지 정한다. 2025.6/20처럼 연도가 있으면 그 연도를 따른다.</div>
+  <div class="grid">
+    <div><label>기본 연도</label><select id="importYearMode" onchange="syncImportYearBox()"><option value="2026">2026년</option><option value="2025">2025년</option><option value="custom">직접 입력</option></select></div>
+    <div><label>직접 입력 연도</label><input id="importYearCustom" inputmode="numeric" placeholder="예: 2025" value="2026"></div>
+  </div>
+</div>
+
 <textarea id="pasteLog" placeholder="2026.6/16 화 322일차&#10;ㅇ14:30 점심식사 330ml, 물 195ml&#10;- 다음 Na 재검 예정: 26.6/22 월요일"></textarea>
 <div class="row"><button onclick="previewPaste()">미리보기</button><button class="primary" onclick="savePaste()">붙여넣기 저장/덮어쓰기</button></div>
 <pre id="pastePreview" class="small"></pre>
@@ -256,40 +269,52 @@ function show(name){
   }
 }
 
-function normalizeYear(y){const n=Number(y);return n<100?2000+n:n}
+function normalizeYear(y){
+  const n=Number(y);
+  if(n<100) return 2000+n;
+  return n;
+}
+
+function syncImportYearBox(){
+  const mode=$("importYearMode")?.value || String(new Date().getFullYear());
+  const custom=$("importYearCustom");
+  if(custom){
+    custom.disabled = mode !== "custom";
+    if(mode !== "custom") custom.value = mode;
+  }
+}
+function importBaseYear(){
+  const mode=$("importYearMode")?.value || String(new Date().getFullYear());
+  const raw = mode==="custom" ? ($("importYearCustom")?.value || "") : mode;
+  const y = Number(String(raw).replace(/[^0-9]/g,""));
+  if(y>=2000 && y<=2100) return y;
+  return new Date().getFullYear();
+}
 function dateHeader(line){
   const s=String(line||"").trim();
   if(!s) return "";
   if(typeof startsTime==="function" && startsTime(s)) return "";
 
-  // 본문/표 안의 수치가 날짜로 오인되는 것을 막는다.
-  // 예: 알부민 2.1, Hb 7.7, 2/10 VRE, 2/25 CRE, 2026-03-18~2026-05-19 문서 범위.
   if(/(알부민|Hb|헤모글로빈|혈색소|albumin|CRP|WBC|Na|K|Cl|BUN|Cr|CRE|VRE|MRSA|대상포진|격리|사유)/i.test(s)
      && !/^\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*(?:[월화수목금토일]|일|—|-|,|\s|$)/.test(s)) return "";
 
-  // 문서 제목/기간 범위: 2026-03-18 ~ 2026-05-19 같은 줄은 날짜 헤더가 아니다.
   if(/^\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*[~～]\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}/.test(s)) return "";
 
-  // 완전 날짜 헤더: 반드시 줄 맨 앞에서 시작해야 한다.
-  // 2026-03-28 토 — 242일차 / 2026.6/20 토 326일차 / 26.6/20
   let m=s.match(/^\s*(\d{2,4})\s*[.\-/년]\s*(\d{1,2})\s*[.\/월-]\s*(\d{1,2})(?:\s*일)?/);
   if(m){
     const yy=normalizeYear(m[1]), mm=+m[2], dd=+m[3];
     if(mm>=1&&mm<=12&&dd>=1&&dd<=31){
       const rest=s.slice(m[0].length).trim();
-      // 날짜 단독, 요일, 일차, 기록/요약/로그, 대시가 따라오는 경우만 헤더로 인정.
       if(!rest || /^[월화수목금토일](?:요일)?(?:\s|$)/.test(rest) || /^(?:-|—|–|,)/.test(rest) || /(일차|기록|요약|로그)/.test(rest)){
         return `${yy}-${pad(mm)}-${pad(dd)}`;
       }
     }
   }
 
-  // 연도 없는 날짜 헤더는 더 엄격하게: 줄 맨 앞 + slash/월만 허용. 
-  // 2.1 같은 검사수치 오인을 막기 위해 점(.) 형식은 여기서 허용하지 않는다.
   m=s.match(/^\s*(\d{1,2})\s*(?:\/|월\s*)(\d{1,2})(?:\s*일)?/);
   if(m && /(^어제|^오늘|기록|일차|요약|로그|월요일|화요일|수요일|목요일|금요일|토요일|일요일|[월화수목금토일](?:요일)?(?:\s|$))/.test(s)){
     const mm=+m[1], dd=+m[2];
-    if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return `${new Date().getFullYear()}-${pad(mm)}-${pad(dd)}`;
+    if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return `${importBaseYear()}-${pad(mm)}-${pad(dd)}`;
   }
 
   if(/^어제\s*(기록|요약|로그)?$/.test(s)){
@@ -299,6 +324,7 @@ function dateHeader(line){
   if(/^오늘\s*(기록|요약|로그)?$/.test(s)) return localDate();
   return "";
 }
+
 
 
 function startsTime(s){
@@ -680,6 +706,19 @@ function dateCountTableHtml(rows){
   </table>`;
 }
 
+function detectYearWarnings(rows, sourceText=""){
+  const warnings=[];
+  const text=String(sourceText||"");
+  const dates=[...new Set((rows||[]).map(r=>(r.dt||"").slice(0,10)).filter(Boolean))].sort();
+  const years=[...new Set(dates.map(d=>d.slice(0,4)))];
+  if(/^\s*\d{1,2}\s*(?:\/|월\s*)\d{1,2}/m.test(text)){
+    warnings.push(`연도 없는 날짜가 포함되어 있습니다. 기본 연도 ${importBaseYear()}년으로 저장됩니다.`);
+  }
+  if(years.length>=2){
+    warnings.push(`여러 연도 기록이 함께 감지되었습니다: ${years.join(", ")}. 2025년과 2026년이 의도대로 구분됐는지 확인하세요.`);
+  }
+  return warnings;
+}
 function detectDateWarnings(rows, sourceText=""){
   rows=rows||[];
   const groups=groupRowsByDate(rows);
@@ -715,7 +754,7 @@ function detectDateWarnings(rows, sourceText=""){
       warnings.push(`날짜 범위가 ${sorted[0]}~${sorted[sorted.length-1]}로 넓습니다. 중간 날짜 헤더가 누락됐는지 확인하세요.`);
     }
   }
-  return warnings;
+  return warnings.concat(detectYearWarnings(rows,sourceText));
 }
 
 function warningHtml(warnings){
@@ -1328,7 +1367,28 @@ function fileDateFixSelfTest(){
     preview:groupedPreviewText(rows)
   };
 }
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest});
+function yearImportSelfTest(){
+  const oldMode=$("importYearMode")?.value;
+  const oldCustom=$("importYearCustom")?.value;
+  if($("importYearMode")) $("importYearMode").value="2025";
+  if($("importYearCustom")) $("importYearCustom").value="2025";
+  const sample=`6/20 토 100일차
+ㅇ3:50 소변 75g
+2026.6/21 일 101일차
+ㅇ4:00 소변 100g
+2025.7/1 화 111일차
+ㅇ5:00 물 120mL`;
+  const rows=parseTextToRows(sample);
+  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)))].sort();
+  if($("importYearMode")) $("importYearMode").value=oldMode||"2026";
+  if($("importYearCustom")) $("importYearCustom").value=oldCustom||"2026";
+  syncImportYearBox();
+  return {
+    ok: dates.includes("2025-06-20") && dates.includes("2026-06-21") && dates.includes("2025-07-01"),
+    dates, rows
+  };
+}
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings});
 </script>
 </body>
 </html>
