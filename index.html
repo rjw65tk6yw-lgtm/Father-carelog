@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 사진영상삭제판</title>
+<title>아버지 케어로그 v42 다크모드판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -60,10 +60,121 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 .mediaLink{font-size:13px;word-break:break-all}
 
 .mediaDelete{margin-top:6px;background:#fee2e2;color:#991b1b;border:1px solid #fecaca}
+
+:root{
+  color-scheme: dark;
+  --bg:#0b1220;
+  --panel:#111827;
+  --panel2:#0f172a;
+  --line:#334155;
+  --text:#e5e7eb;
+  --muted:#94a3b8;
+  --accent:#60a5fa;
+  --accent2:#1d4ed8;
+  --okbg:#052e16;
+  --okline:#166534;
+  --warnbg:#3f1d0d;
+  --warnline:#b45309;
+  --dangerbg:#3f0d12;
+  --dangerline:#b91c1c;
+}
+html,body{
+  background:var(--bg)!important;
+  color:var(--text)!important;
+}
+body{ color:var(--text)!important; }
+.card, .panel, section.card, .mediaBox, .yearBox, .advancedBox, .warnBox, .okBox, .noteBox{
+  background:var(--panel)!important;
+  color:var(--text)!important;
+  border-color:var(--line)!important;
+  box-shadow:none!important;
+}
+.note, .small, .hint, .help, .muted{
+  color:var(--muted)!important;
+}
+h1,h2,h3,h4,h5,h6, label, .label{
+  color:var(--text)!important;
+}
+input, select, textarea{
+  background:var(--panel2)!important;
+  color:var(--text)!important;
+  border:1px solid var(--line)!important;
+}
+input::placeholder, textarea::placeholder{
+  color:var(--muted)!important;
+}
+button{
+  background:#1e293b!important;
+  color:var(--text)!important;
+  border:1px solid var(--line)!important;
+}
+button:hover{ filter:brightness(1.08); }
+button.primary, .primary{
+  background:var(--accent2)!important;
+  border-color:#2563eb!important;
+  color:#eff6ff!important;
+}
+.tab, .tabs button, .tabBtn{
+  background:#0f172a!important;
+  color:var(--muted)!important;
+  border-color:var(--line)!important;
+}
+.tab.active, .tabs button.active, .tabBtn.active{
+  background:#1d4ed8!important;
+  color:#eff6ff!important;
+  border-color:#2563eb!important;
+}
+.warnBox{
+  background:var(--warnbg)!important;
+  color:#fed7aa!important;
+  border-color:var(--warnline)!important;
+}
+.okBox{
+  background:var(--okbg)!important;
+  color:#bbf7d0!important;
+  border-color:var(--okline)!important;
+}
+.advancedBox{ background:#1f2937!important; }
+.mediaThumb{
+  background:#0f172a!important;
+  border-color:var(--line)!important;
+  color:var(--text)!important;
+}
+.mediaLink, a{ color:#93c5fd!important; }
+a:hover{ color:#bfdbfe!important; }
+.countTable, table{
+  background:var(--panel)!important;
+  color:var(--text)!important;
+  border-color:var(--line)!important;
+}
+.countTable th, .countTable td, table th, table td{
+  border-color:var(--line)!important;
+}
+.countTable th, table th{
+  background:#1e293b!important;
+  color:var(--text)!important;
+}
+pre{
+  background:#020617!important;
+  color:#e2e8f0!important;
+  border:1px solid var(--line)!important;
+}
+.record, .rowItem, .listItem, .summaryCard{
+  background:#0f172a!important;
+  border-color:var(--line)!important;
+  color:var(--text)!important;
+}
+.mediaDelete{
+  background:#450a0a!important;
+  color:#fecaca!important;
+  border-color:#991b1b!important;
+}
+hr{ border-color:var(--line)!important; }
+
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 사진영상삭제판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 다크모드판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -249,6 +360,7 @@ button.primary{background:var(--primary);color:#fff;border-color:var(--primary)}
 </main>
 
 <script defer src="https://unpkg.com/mammoth/mammoth.browser.min.js"></script>
+<!-- 다크모드 기본 적용 -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
 import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
