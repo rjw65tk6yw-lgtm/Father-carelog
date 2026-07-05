@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 v42 요약폭확장판</title>
+<title>아버지 케어로그 v42 로직단순화최적화판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -212,10 +212,140 @@ h1,h2,h3{color:#f8fafc!important}
   button{min-height:44px!important}
 }
 
+
+/* v42 중앙정렬폴더판: 폴더 펼침 시 오른쪽 잘림/중첩 폭 문제 보정 */
+@media (max-width:760px){
+  html,body{
+    width:100%!important;
+    max-width:100%!important;
+    overflow-x:hidden!important;
+  }
+  body{
+    margin:0!important;
+    padding:0!important;
+  }
+  main,.app,.wrap,.container,#app{
+    width:100%!important;
+    max-width:100%!important;
+    margin:0 auto!important;
+    padding:0 10px!important;
+    overflow-x:hidden!important;
+  }
+  header{
+    width:100%!important;
+    max-width:100%!important;
+    margin:0 auto!important;
+    padding-left:12px!important;
+    padding-right:12px!important;
+  }
+  nav,.tabs,.nav{
+    width:100%!important;
+    max-width:100%!important;
+    margin-left:0!important;
+    margin-right:0!important;
+  }
+  section,.card,.panel{
+    width:100%!important;
+    max-width:100%!important;
+    margin-left:auto!important;
+    margin-right:auto!important;
+  }
+
+  /* 연/월/일 폴더: 들여쓰기/세로선 제거, 항상 부모폭 기준 */
+  .folderBody,
+  .dayBody,
+  [data-folder-body="1"]{
+    width:100%!important;
+    max-width:100%!important;
+    margin-left:0!important;
+    margin-right:0!important;
+    padding-left:0!important;
+    padding-right:0!important;
+    border-left:0!important;
+    overflow-x:hidden!important;
+  }
+  .folderGroup{
+    width:100%!important;
+    max-width:100%!important;
+    margin-left:0!important;
+    margin-right:0!important;
+  }
+  .folderBody .card,
+  .dayBody .card,
+  [data-folder-body="1"] .card{
+    width:100%!important;
+    max-width:100%!important;
+    margin:10px auto!important;
+  }
+  .folderHead{
+    width:100%!important;
+    max-width:100%!important;
+    margin-left:0!important;
+    margin-right:0!important;
+    text-align:left!important;
+    white-space:normal!important;
+    overflow-wrap:anywhere!important;
+  }
+
+  /* 오늘 요약: 2열 고정 느낌, 중앙 정렬, 긴 항목은 줄바꿈 */
+  #todaySummary{
+    width:100%!important;
+    max-width:100%!important;
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+    gap:8px!important;
+    align-items:stretch!important;
+  }
+  #todaySummary .pill{
+    width:100%!important;
+    min-width:0!important;
+    max-width:100%!important;
+    display:flex!important;
+    align-items:center!important;
+    justify-content:center!important;
+    margin:0!important;
+    padding:8px 10px!important;
+    white-space:normal!important;
+    overflow-wrap:anywhere!important;
+    word-break:keep-all!important;
+    line-height:1.25!important;
+    font-size:16px!important;
+    text-align:center!important;
+  }
+  #todaySummary .pill:first-child{
+    grid-column:1 / span 2!important;
+  }
+  #todaySummary pre,
+  #todaySummary pre.small{
+    grid-column:1 / span 2!important;
+    width:100%!important;
+    max-width:100%!important;
+    margin-top:8px!important;
+    white-space:pre-wrap!important;
+    overflow-wrap:anywhere!important;
+    overflow-x:hidden!important;
+  }
+
+  .rec,.record,.memo,pre{
+    max-width:100%!important;
+    overflow-wrap:anywhere!important;
+    word-break:break-word!important;
+  }
+}
+
+
+/* 로직단순화최적화판 최종 레이아웃 안전 보정 */
+@media (max-width:760px){
+  .folderBody,.dayBody,[data-folder-body="1"]{width:100%!important;max-width:100%!important;margin-left:0!important;padding-left:0!important;border-left:0!important;overflow-x:hidden!important}
+  #todaySummary{display:grid!important;grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;gap:8px!important}
+  #todaySummary .pill{min-width:0!important;width:100%!important;max-width:100%!important;white-space:normal!important;overflow-wrap:anywhere!important}
+  #todaySummary .pill:first-child,#todaySummary pre{grid-column:1 / span 2!important}
+}
+
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 요약폭확장판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 로직단순화최적화판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -729,12 +859,14 @@ function normalizeCareLogTextForParser(text){
 }
 
 function gptImportRawText(){
-  return normalizeCareLogTextForParser(val("gptInText"));
+  return getImportText("file");
 }
 
+
 function pasteRawText(){
-  return normalizeCareLogTextForParser(val("pasteLog"));
+  return getImportText("paste");
 }
+
 
 function parseTextToRows(text){
   const normalized=normalizeCareLogTextForParser(text);
@@ -793,8 +925,9 @@ function parseTextToRows(text){
 
 
 function parsePasteText(){
-  return dedupeRows(parseTextToRows(pasteRawText()));
+  return parseImportRows("paste");
 }
+
 
 
 
@@ -1103,32 +1236,16 @@ function dateGroupSelfTest(){
 }
 
 function previewPaste(){
-  const raw=pasteRawText();
-  const rows=parsePasteText();
-  $("pastePreview").innerHTML=safetyPreviewHtml(rows,raw);
+  setImportPreview("paste");
 }
+
 
 
 
 async function savePaste(){
-  const rawText=$("pasteLog").value;
-  const rawRows=parseTextToRows(rawText);
-  const rows=dedupeRows(rawRows);
-  if(!rows.length){alert("저장할 기록이 없습니다.");return}
-  const groups=groupRowsByDate(rows);
-  const removed=rows._removedDuplicates||0;
-  const warnings=detectDateWarnings(rows,rawText);
-  let msg=`${rows.length}개 기록 / ${groups.length}일치를 저장하고 날짜별 요약도 저장할까요?`;
-  if(removed) msg+=`\n중복 ${removed}개는 같은 시간·같은 내용으로 보고 덮어쓰기 처리합니다.`;
-  if(warnings.length) msg+=`\n\n[저장 전 확인 필요]\n${warnings.map((w,i)=>`${i+1}. ${w}`).join("\n")}`;
-  if(!confirm(msg))return;
-  await saveRows(rows);
-  const savedSummaries=await savePastedDailySummaries(rows);
-  $("pasteLog").value="";
-  $("pastePreview").textContent="";
-  alert(`저장했습니다.\n기록 ${rows.length}개\n날짜별 요약 ${savedSummaries}일치${removed?`\n중복 덮어쓰기 ${removed}개`:""}`);
-  show("records");
+  await saveImportRows("paste");
 }
+
 
 
 
@@ -1547,9 +1664,10 @@ async function loadGptInFile(){
     previewGptIn();
   }catch(e){
     setGptInStatus("파일 읽기 실패");
-    alert("파일 읽기 실패: "+e.message);
+    alert("파일 읽기 실패: "+((e&&e.message)?e.message:e));
   }
 }
+
 
 
 function clearGptIn(){
@@ -1560,14 +1678,15 @@ function clearGptIn(){
 }
 
 function parseGptIncomingText(){
-  return dedupeRows(parseTextToRows(gptImportRawText()));
+  return parseImportRows("file");
 }
 
 
 
 
+
 function previewRowsCompact(rows,limit=80){
-  const raw=gptImportRawText ? gptImportRawText() : val("gptInText");
+  const raw=getImportText("file");
   rows=dedupeRows(rows||[]);
   if(!rows.length) return "읽어낸 기록이 없습니다. 날짜 헤더와 시간 기록 형식을 확인하세요.";
   return safetyPreviewHtml(rows,raw);
@@ -1576,42 +1695,18 @@ function previewRowsCompact(rows,limit=80){
 
 
 
+
 function previewGptIn(){
-  const raw=gptImportRawText();
-  const rows=parseGptIncomingText();
-  const status=`기본 연도 ${importBaseYear()}년 기준 · 전체 텍스트 ${raw.length.toLocaleString()}자 · 읽은 기록 ${rows.length.toLocaleString()}개`;
-  setGptInStatus(status);
-  const el=$("gptInPreview") || $("gptPreview") || $("gptInStatus");
-  if(el){
-    if(el.id==="gptInStatus") el.textContent=status+"\n\n"+previewRowsCompact(rows);
-    else el.innerHTML=previewRowsCompact(rows);
-  }
+  setImportPreview("file");
 }
+
 
 
 
 async function saveGptIn(){
-  const rawText=gptImportRawText();
-  const rows=parseGptIncomingText();
-  if(!rows.length){alert("저장할 기록이 없습니다.");return;}
-  const groups=groupRowsByDate(rows);
-  const dates=groups.map(g=>g.date);
-  const warnings=detectDateWarnings(rows,rawText);
-  let msg=`파일 전체 텍스트 ${rawText.length.toLocaleString()}자에서 읽은 ${rows.length.toLocaleString()}개 기록 / ${groups.length}일치를 앱에 저장/덮어쓰기 할까요?\n날짜: ${dates.slice(0,8).join(", ")}${dates.length>8?" 외":""}`;
-  if(warnings.length) msg+=`\n\n[저장 전 확인 필요]\n${warnings.map((w,i)=>`${i+1}. ${w}`).join("\n")}`;
-  if(!confirm(msg))return;
-  setGptInStatus("저장 중...");
-  try{
-    await saveRows(rows);
-    const savedSummaries=await savePastedDailySummaries(rows);
-    alert(`연동 파일 → 앱 저장 완료\n기록 ${rows.length.toLocaleString()}개\n날짜별 요약 ${savedSummaries}일치`);
-    clearGptIn();
-    show("records");
-  }catch(e){
-    setGptInStatus("저장 실패");
-    alert("저장 실패: "+e.message);
-  }
+  await saveImportRows("file");
 }
+
 
 
 
@@ -1627,6 +1722,7 @@ function gptInTextChanged(){
     if(text && text.length<200000) previewGptIn();
   },700);
 }
+
 
 
 
@@ -1786,7 +1882,90 @@ function fileImportStrongSelfTest(){
     rows
   };
 }
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest});
+
+function getImportText(kind){
+  const id = kind==="file" ? "gptInText" : "pasteLog";
+  return normalizeCareLogTextForParser(val(id));
+}
+
+function parseImportRows(kind){
+  return dedupeRows(parseTextToRows(getImportText(kind)));
+}
+
+function importPreviewHtml(kind){
+  const rows=parseImportRows(kind);
+  const raw=getImportText(kind);
+  if(!rows.length) return "읽어낸 기록이 없습니다. 날짜 헤더와 시간 기록 형식을 확인하세요.";
+  return safetyPreviewHtml(rows,raw);
+}
+
+function importSummaryMessage(kind,rows,rawText){
+  const groups=groupRowsByDate(rows);
+  const dates=groups.map(g=>g.date);
+  const removed=rows._removedDuplicates||0;
+  const label=kind==="file" ? "연동 파일" : "로그붙여넣기";
+  let msg=`${label}: 전체 텍스트 ${rawText.length.toLocaleString()}자에서 읽은 ${rows.length.toLocaleString()}개 기록 / ${groups.length}일치를 저장하고 날짜별 요약도 저장할까요?`;
+  if(dates.length) msg+=`\n날짜: ${dates.slice(0,8).join(", ")}${dates.length>8?" 외":""}`;
+  if(removed) msg+=`\n중복 ${removed}개는 같은 시간·같은 내용으로 보고 덮어쓰기 처리합니다.`;
+  const warnings=detectDateWarnings(rows,rawText);
+  if(warnings.length) msg+=`\n\n[저장 전 확인 필요]\n${warnings.map((w,i)=>`${i+1}. ${w}`).join("\n")}`;
+  return msg;
+}
+
+async function saveImportRows(kind){
+  const rawText=getImportText(kind);
+  const rows=parseImportRows(kind);
+  if(!rows.length){alert("저장할 기록이 없습니다.");return;}
+  if(!confirm(importSummaryMessage(kind,rows,rawText))) return;
+  if(kind==="file") setGptInStatus("저장 중...");
+  try{
+    await saveRows(rows);
+    const savedSummaries=await savePastedDailySummaries(rows);
+    alert(`저장 완료\n기록 ${rows.length.toLocaleString()}개\n날짜별 요약 ${savedSummaries}일치`);
+    if(kind==="file") clearGptIn();
+    else { $("pasteLog").value=""; $("pastePreview").textContent=""; }
+    show("records");
+  }catch(e){
+    if(kind==="file") setGptInStatus("저장 실패");
+    alert("저장 실패: "+((e&&e.message)?e.message:e));
+  }
+}
+
+function setImportPreview(kind){
+  if(kind==="file"){
+    const rows=parseImportRows("file");
+    const raw=getImportText("file");
+    setGptInStatus(`기본 연도 ${importBaseYear()}년 기준 · 전체 텍스트 ${raw.length.toLocaleString()}자 · 읽은 기록 ${rows.length.toLocaleString()}개`);
+    const el=$("gptInPreview") || $("gptPreview") || $("gptInStatus");
+    if(el){
+      if(el.id==="gptInStatus") el.textContent=importPreviewHtml("file");
+      else el.innerHTML=importPreviewHtml("file");
+    }
+  }else{
+    $("pastePreview").innerHTML=importPreviewHtml("paste");
+  }
+}
+
+function logicSimpleSelfTest(){
+  const oldFile=$("gptInText")?.value||"";
+  const oldPaste=$("pasteLog")?.value||"";
+  const sample=`2025.6/20 토 100일차 ㅇ1:00 소변 10g ㅇ2:00 소변 20g ㅇ3:00 석션 - 하위 설명`;
+  if($("gptInText")) $("gptInText").value=sample;
+  if($("pasteLog")) $("pasteLog").value=sample;
+  const a=parseImportRows("file");
+  const b=parseImportRows("paste");
+  if($("gptInText")) $("gptInText").value=oldFile;
+  if($("pasteLog")) $("pasteLog").value=oldPaste;
+  return {
+    ok:a.length===b.length && a.length>=3 && JSON.stringify(a.map(x=>x.dt))===JSON.stringify(b.map(x=>x.dt)),
+    fileCount:a.length,
+    pasteCount:b.length,
+    fileRows:a,
+    pasteRows:b
+  };
+}
+
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest});
 </script>
 </body>
 </html>
