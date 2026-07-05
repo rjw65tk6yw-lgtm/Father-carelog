@@ -2,8 +2,8 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 연동파일강화판</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>아버지 케어로그 v42 다크가독성고정판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -171,10 +171,33 @@ pre{
 }
 hr{ border-color:var(--line)!important; }
 
+
+/* v42 다크가독성고정판 */
+*{box-sizing:border-box!important}
+html,body{width:100%!important;max-width:100%!important;overflow-x:hidden!important}
+body{margin:0!important;padding:0!important}
+main,.app,.wrap,.container,#app{width:100%!important;max-width:720px!important;margin:0 auto!important;overflow-x:hidden!important}
+section,.card,.panel{width:calc(100% - 24px)!important;max-width:calc(100% - 24px)!important;margin-left:12px!important;margin-right:12px!important}
+header,.top,.titlebar{position:sticky!important;top:0!important;z-index:50!important;background:#0b1220!important;border-bottom:1px solid #1e293b!important}
+header{width:100%!important;max-width:720px!important;margin:0 auto!important}
+nav,.tabs,.nav{width:calc(100% - 24px)!important;max-width:calc(100% - 24px)!important;margin-left:12px!important;margin-right:12px!important}
+.row,.grid{max-width:100%!important}
+button,input,select,textarea{max-width:100%!important}
+.pill{background:#1e3a8a!important;color:#f8fafc!important;border:1px solid #93c5fd!important;text-shadow:none!important;opacity:1!important;font-weight:700!important}
+#todaySummary .pill,#todaySummary span,#todaySummary .small{color:#f8fafc!important;opacity:1!important}
+#todaySummary pre,pre.small{background:#020617!important;color:#f8fafc!important;border:1px solid #475569!important;opacity:1!important;white-space:pre-wrap!important;overflow-x:auto!important}
+#todaySummary{color:#f8fafc!important}
+.note,.small{color:#cbd5e1!important;opacity:1!important}
+.countTable th,.countTable td,table th,table td{color:#e5e7eb!important}
+.memo,.rec,.record{color:#e5e7eb!important}
+h1,h2,h3{color:#f8fafc!important}
+.folderHead{color:#f8fafc!important;background:#111827!important;border-color:#475569!important}
+.folderHead .levelTag{color:#cbd5e1!important}
+
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 연동파일강화판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 다크가독성고정판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
