@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>아버지 케어로그 v42 다크모드판</title>
+<title>아버지 케어로그 v42 연동파일강화판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -174,7 +174,7 @@ hr{ border-color:var(--line)!important; }
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 다크모드판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 연동파일강화판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -660,13 +660,59 @@ function isLooseRecordLine(line){
   // 시간 없는 행은 실제 수량/처치가 명확하고 짧을 때만 별도 기록으로 허용.
   return s.length < 80 && /(소변|대변|식사|경관식|물\s*\d|수분\s*\d|네뷸|토닥|석션|구강청소|ROM|혈압|체온|산소포화도|SpO)/.test(s);
 }
+
+function normalizeCareLogTextForParser(text){
+  let s=String(text||"");
+  try{s=s.normalize("NFC");}catch(e){}
+  s=s.replace(/\r\n/g,"\n").replace(/\r/g,"\n");
+  s=s.replace(/\u00A0/g," ");
+  s=s.replace(/[ \t]+/g," ");
+
+  // TXT/메모 export에서 여러 기록이 한 줄로 붙는 경우를 줄 단위로 복구.
+  // 예: "... ㅇ3:50 소변 75g ㅇ4:05 ROM" → 각 시간 기록 앞에 줄바꿈.
+  s=s.replace(/([^\n])\s+([ㅇoO○]\s*\d{1,2}\s*[:：]\s*\d{1,2})/g,"$1\n$2");
+  s=s.replace(/([^\n])\s+([ㅇoO○]\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?)/g,"$1\n$2");
+
+  // 글머리표 시간 기록도 복구.
+  s=s.replace(/([^\n])\s+([\-•*]\s*\d{1,2}\s*[:：]\s*\d{1,2})/g,"$1\n$2");
+  s=s.replace(/([^\n])\s+([\-•*]\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?)/g,"$1\n$2");
+
+  // 날짜 헤더가 앞 문장에 붙는 경우 복구.
+  s=s.replace(/([^\n])\s+((?:20\d{2}|\d{2})\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*(?:[월화수목금토일]|일|—|-|,|\s))/g,"$1\n$2");
+  s=s.replace(/([^\n])\s+(\d{1,2}\s*(?:\/|월\s*)\d{1,2}(?:\s*일)?\s*(?:[월화수목금토일]|요일|기록|일차))/g,"$1\n$2");
+
+  // iPhone 메모에서 하위 설명이 " - "로 붙는 경우 줄 분리.
+  s=s.replace(/([^\n])\s+(-\s+)/g,"$1\n$2");
+
+  return s.trim();
+}
+
+function gptImportRawText(){
+  return normalizeCareLogTextForParser(val("gptInText"));
+}
+
+function pasteRawText(){
+  return normalizeCareLogTextForParser(val("pasteLog"));
+}
+
 function parseTextToRows(text){
-  const lines=String(text||"").split(/\n/).map(x=>x.trim()).filter(Boolean);
+  const normalized=normalizeCareLogTextForParser(text);
+  const lines=normalized.split(/\n/).map(x=>x.trim()).filter(Boolean);
   let cur="", pending=null, rows=[];
+  let memoSeq=0;
   const flush=()=>{
     if(!pending) return;
     rows.push(...expandRecord(parseLine(pending.text,pending.date||localDate())));
     pending=null;
+  };
+  const shouldSkipStandalone=(line)=>{
+    const s=cleanEvent(line);
+    if(!s) return true;
+    if(/^(목차|페이지|Page\s*\d+|표\s*\d+|그림\s*\d+)$/i.test(s)) return true;
+    if(/^(복원 수준|시간\/구간|복원 기록|상태평가\/해석|원자료|보강 필요 목록)\b/.test(s)) return true;
+    // 검사수치/격리 이력 설명은 날짜 오인 방지 대상. 시간 기록 뒤 설명으로 붙는 것은 허용.
+    if(/(알부민|Hb|헤모글로빈|혈색소|VRE|CRE|MRSA|대상포진|격리 사유)/i.test(s) && !startsTime(s)) return true;
+    return false;
   };
   for(const line of lines){
     const dh=dateHeader(line);
@@ -678,16 +724,25 @@ function parseTextToRows(text){
       continue;
     }
 
-    // 시간행 뒤에 이어진 설명은 그 기록의 메모로 붙인다.
+    // 시간행 뒤에 이어진 설명은 절대 버리지 않고 해당 기록 메모로 붙인다.
     if(pending){
       pending.text+="\n"+line;
       continue;
     }
 
-    // 파일 연동 DOCX의 일반 문장/표/목차는 기록으로 만들지 않는다.
-    // 다만 시간 없는 짧은 실제 기록만 예외적으로 저장한다.
+    // 날짜가 잡힌 상태에서 명확한 짧은 실제 기록은 시간 없이도 저장.
     if(cur && isLooseRecordLine(line)){
       pending={date:cur,text:cleanEvent(line)};
+      continue;
+    }
+
+    // TXT 로그 보존용: 날짜 아래의 글머리표/하위 설명은 메모전용으로 보존한다.
+    // 단, DOCX 문서의 목차/검사수치/격리 설명 같은 독립 설명문은 제외.
+    if(cur && /^[\-•*]\s+/.test(line) && !shouldSkipStandalone(line)){
+      memoSeq++;
+      const hh="00", mm=pad(Math.min(59,memoSeq));
+      pending={date:cur,text:`${hh}:${mm} 메모 ${cleanEvent(line)}`};
+      continue;
     }
   }
   flush();
@@ -695,9 +750,11 @@ function parseTextToRows(text){
 }
 
 
+
 function parsePasteText(){
-  return dedupeRows(parseTextToRows($("pasteLog").value));
+  return dedupeRows(parseTextToRows(pasteRawText()));
 }
+
 
 
 async function saveRows(rows){
@@ -1005,10 +1062,11 @@ function dateGroupSelfTest(){
 }
 
 function previewPaste(){
-  const raw=$("pasteLog").value;
+  const raw=pasteRawText();
   const rows=parsePasteText();
   $("pastePreview").innerHTML=safetyPreviewHtml(rows,raw);
 }
+
 
 
 async function savePaste(){
@@ -1429,6 +1487,7 @@ async function loadGptInFile(){
   const name=f.name.toLowerCase();
   setGptInStatus(`파일 읽는 중: ${f.name}`);
   try{
+    let text="";
     if(name.endsWith(".docx")){
       if(!window.mammoth){
         alert("DOCX 읽기 모듈을 불러오지 못했습니다. TXT로 저장하거나 내용을 붙여넣어 주세요.");
@@ -1437,17 +1496,20 @@ async function loadGptInFile(){
       }
       const buf=await f.arrayBuffer();
       const result=await window.mammoth.extractRawText({arrayBuffer:buf});
-      $("gptInText").value=result.value||"";
+      text=result.value||"";
     }else{
-      $("gptInText").value=await f.text();
+      text=await f.text();
     }
-    setGptInStatus(`읽기 완료: ${$("gptInText").value.length.toLocaleString()}자`);
+    const normalized=normalizeCareLogTextForParser(text);
+    $("gptInText").value=normalized;
+    setGptInStatus(`읽기 완료: 원본 ${String(text).length.toLocaleString()}자 → 정리 ${normalized.length.toLocaleString()}자`);
     previewGptIn();
   }catch(e){
     setGptInStatus("파일 읽기 실패");
     alert("파일 읽기 실패: "+e.message);
   }
 }
+
 
 function clearGptIn(){
   $("gptInFile").value="";
@@ -1457,13 +1519,14 @@ function clearGptIn(){
 }
 
 function parseGptIncomingText(){
-  return dedupeRows(parseTextToRows(val("gptInText")));
+  return dedupeRows(parseTextToRows(gptImportRawText()));
 }
 
 
 
+
 function previewRowsCompact(rows,limit=80){
-  const raw=val("gptInText");
+  const raw=gptImportRawText ? gptImportRawText() : val("gptInText");
   rows=dedupeRows(rows||[]);
   if(!rows.length) return "읽어낸 기록이 없습니다. 날짜 헤더와 시간 기록 형식을 확인하세요.";
   return safetyPreviewHtml(rows,raw);
@@ -1471,9 +1534,11 @@ function previewRowsCompact(rows,limit=80){
 
 
 
+
 function previewGptIn(){
+  const raw=gptImportRawText();
   const rows=parseGptIncomingText();
-  const status=`기본 연도 ${importBaseYear()}년 기준으로 미리보기`;
+  const status=`기본 연도 ${importBaseYear()}년 기준 · 전체 텍스트 ${raw.length.toLocaleString()}자 · 읽은 기록 ${rows.length.toLocaleString()}개`;
   setGptInStatus(status);
   const el=$("gptInPreview") || $("gptPreview") || $("gptInStatus");
   if(el){
@@ -1483,21 +1548,22 @@ function previewGptIn(){
 }
 
 
+
 async function saveGptIn(){
-  const rawText=val("gptInText");
+  const rawText=gptImportRawText();
   const rows=parseGptIncomingText();
   if(!rows.length){alert("저장할 기록이 없습니다.");return;}
   const groups=groupRowsByDate(rows);
   const dates=groups.map(g=>g.date);
   const warnings=detectDateWarnings(rows,rawText);
-  let msg=`파일에서 읽은 ${rows.length}개 기록 / ${groups.length}일치를 앱에 저장/덮어쓰기 할까요?\n날짜: ${dates.slice(0,8).join(", ")}${dates.length>8?" 외":""}`;
+  let msg=`파일 전체 텍스트 ${rawText.length.toLocaleString()}자에서 읽은 ${rows.length.toLocaleString()}개 기록 / ${groups.length}일치를 앱에 저장/덮어쓰기 할까요?\n날짜: ${dates.slice(0,8).join(", ")}${dates.length>8?" 외":""}`;
   if(warnings.length) msg+=`\n\n[저장 전 확인 필요]\n${warnings.map((w,i)=>`${i+1}. ${w}`).join("\n")}`;
   if(!confirm(msg))return;
   setGptInStatus("저장 중...");
   try{
     await saveRows(rows);
     const savedSummaries=await savePastedDailySummaries(rows);
-    alert(`연동 파일 → 앱 저장 완료\n기록 ${rows.length}개\n날짜별 요약 ${savedSummaries}일치`);
+    alert(`연동 파일 → 앱 저장 완료\n기록 ${rows.length.toLocaleString()}개\n날짜별 요약 ${savedSummaries}일치`);
     clearGptIn();
     show("records");
   }catch(e){
@@ -1510,15 +1576,17 @@ async function saveGptIn(){
 
 
 
+
 let gptInTimer=null;
 function gptInTextChanged(){
   clearTimeout(gptInTimer);
   const text=val("gptInText");
-  setGptInStatus(text?`입력됨: ${text.length.toLocaleString()}자`:"");
+  setGptInStatus(text?`입력됨: ${text.length.toLocaleString()}자 · 기본 연도 ${importBaseYear()}년`:"");
   gptInTimer=setTimeout(()=>{
-    if(text && text.length<20000) previewGptIn();
-  },500);
+    if(text && text.length<200000) previewGptIn();
+  },700);
 }
+
 
 
 
@@ -1662,7 +1730,22 @@ function mediaDeleteSelfTest(){
     hasDeleteImport: typeof deleteObject!=="undefined"
   };
 }
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest});
+function fileImportStrongSelfTest(){
+  const old=$("gptInText")?.value||"";
+  const sample=`2025.6/20 토 100일차 ㅇ1:00 소변 10g ㅇ2:00 소변 20g ㅇ3:00 소변 30g - 하위 설명 ㅇ4:00 아침식사 330mL, 물 120mL 2025.6/21 일 101일차 ㅇ1:00 석션 1/2 깊은 ㅇ2:00 대변 40g`;
+  if($("gptInText")) $("gptInText").value=normalizeCareLogTextForParser(sample);
+  const rows=parseGptIncomingText();
+  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)))].sort();
+  if($("gptInText")) $("gptInText").value=old;
+  return {
+    ok: rows.length>=6 && dates.includes("2025-06-20") && dates.includes("2025-06-21"),
+    count:rows.length,
+    dates,
+    normalized:normalizeCareLogTextForParser(sample),
+    rows
+  };
+}
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest});
 </script>
 </body>
 </html>
