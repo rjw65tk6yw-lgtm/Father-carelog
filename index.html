@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 v42 로직단순화최적화판</title>
+<title>아버지 케어로그 v42 중복정리판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -345,7 +345,7 @@ h1,h2,h3{color:#f8fafc!important}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 로직단순화최적화판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 중복정리판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -465,6 +465,16 @@ h1,h2,h3{color:#f8fafc!important}
 </div>
 </div>
 </div>
+
+<div class="advancedBox">
+  <h3>전체 중복기록 정리</h3>
+  <div class="note">TXT 파일을 잘못 불러와 같은 기록이 여러 번 저장됐을 때 사용한다. 기준은 같은 날짜·시간 + 같은 종류 + 같은 내용이다. 먼저 CSV 백업을 받은 뒤 실행하는 것이 안전하다.</div>
+  <div class="row">
+    <button onclick="checkBulkDuplicates()">전체 중복기록 검사</button>
+    <button class="danger" onclick="removeBulkDuplicates()">전체 중복기록 삭제</button>
+  </div>
+</div>
+
 </section>
 
 
@@ -1965,7 +1975,67 @@ function logicSimpleSelfTest(){
   };
 }
 
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest});
+
+function stableRecordTextForDedupe(r){
+  return stripKey(String(r&&r.memo||"")).replace(/\s+/g," ").replace(/[，、]/g,",").trim();
+}
+function bulkDuplicateKey(r){
+  return [(r&&r.dt||"").slice(0,16),r&&r.type||"",stableRecordTextForDedupe(r)].join("|");
+}
+function findBulkDuplicates(){
+  const map=new Map(), duplicates=[];
+  const rows=(allRows||[]).slice().sort((a,b)=>(a.dt||"").localeCompare(b.dt||"")||String(a.id||a.key||"").localeCompare(String(b.id||b.key||"")));
+  for(const r of rows){
+    const k=bulkDuplicateKey(r);
+    if(!k || k==="||") continue;
+    if(map.has(k)) duplicates.push({keep:map.get(k),remove:r,key:k});
+    else map.set(k,r);
+  }
+  return {duplicates,total:rows.length};
+}
+function duplicatePreviewText(items,limit=20){
+  if(!items.length) return "중복 기록 없음";
+  return items.slice(0,limit).map((x,i)=>{
+    const r=x.remove;
+    return `${i+1}. ${r.dt||""} [${r.type||""}] ${stableRecordTextForDedupe(r).slice(0,80)}`;
+  }).join("\n")+(items.length>limit?`\n... 외 ${items.length-limit}개`:"");
+}
+async function checkBulkDuplicates(){
+  const r=findBulkDuplicates();
+  alert(`전체 기록 ${r.total}개 중 중복으로 보이는 기록 ${r.duplicates.length}개를 찾았습니다.\n\n${duplicatePreviewText(r.duplicates,30)}`);
+}
+async function removeBulkDuplicates(){
+  try{
+    if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
+    const r=findBulkDuplicates();
+    if(!r.duplicates.length){alert("중복 기록이 없습니다.");return;}
+    if(!confirm(`중복 기록 ${r.duplicates.length}개를 삭제할까요?\n\n기준: 같은 날짜·시간 + 같은 종류 + 같은 내용\n각 중복 묶음에서 먼저 저장된 1개는 남기고 나머지만 삭제합니다.\n\n삭제 전 백업 CSV를 받아두는 것을 권장합니다.\n\n${duplicatePreviewText(r.duplicates,20)}`)) return;
+    let deleted=0, failed=0;
+    for(const x of r.duplicates){
+      const rr=x.remove;
+      const id=rr.id||rr.key||(typeof recordId==="function"?recordId(rr):"");
+      if(!id){failed++; continue;}
+      try{await deleteDoc(doc(db,roomPath,id)); deleted++;}
+      catch(e){failed++;}
+    }
+    alert(`중복 정리 완료\n삭제 ${deleted}개${failed?`\n실패 ${failed}개`:""}`);
+  }catch(e){
+    if(typeof showError==="function") showError("전체 중복기록 정리",e);
+    else alert("전체 중복기록 정리 오류: "+((e&&e.message)?e.message:e));
+  }
+}
+function bulkDedupeSelfTest(){
+  const sample=[
+    {dt:"2026-07-06T04:50",type:"식사/수분",memo:"아침식사 225ml 물 265ml",id:"a"},
+    {dt:"2026-07-06T04:50",type:"식사/수분",memo:"아침식사 225ml   물 265ml",id:"b"},
+    {dt:"2026-07-06T05:00",type:"대소변",memo:"소변 100g",id:"c"}
+  ];
+  const old=allRows; allRows=sample;
+  const r=findBulkDuplicates(); allRows=old;
+  return {ok:r.duplicates.length===1 && r.duplicates[0].remove.id==="b", result:r};
+}
+
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates});
 </script>
 </body>
 </html>
