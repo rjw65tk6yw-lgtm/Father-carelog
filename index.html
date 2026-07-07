@@ -4,60 +4,111 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>아버지 케어로그</title>
-  <meta name="theme-color" content="#1f5fbf" />
+  <meta name="theme-color" content="#ffffff" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <div id="app" class="app">
+  <section id="loginView" class="login-shell">
+    <div class="login-card">
+      <p class="eyebrow">CARELOG</p>
+      <h1>아버지 케어로그</h1>
+      <p class="login-copy">기존처럼 비밀번호(가족 코드)별로 기록을 분리해서 보이도록 바꿨다.</p>
+      <form id="loginForm" class="stack-16">
+        <label class="field">
+          <span>가족 코드 / 비밀번호</span>
+          <input id="profileCodeInput" type="text" autocomplete="off" placeholder="예: 1234 또는 가족코드" required />
+        </label>
+        <label class="checkbox-row">
+          <input id="rememberProfile" type="checkbox" checked />
+          <span>이 기기에서 코드 기억</span>
+        </label>
+        <button class="primary-btn" type="submit">앱 열기</button>
+      </form>
+      <p class="login-note">복원한 기록이 안 보였던 이유는 저장 키가 기존 비밀번호 기준으로 나뉘어 있었을 가능성이 크다. 아래 앱에는 기존 브라우저 데이터 찾기 기능도 넣었다.</p>
+    </div>
+  </section>
+
+  <div id="app" class="app hidden">
     <header class="app-header">
       <div>
         <h1>아버지 케어로그</h1>
-        <p id="todayLabel" class="subtle"></p>
+        <div class="header-meta">
+          <p id="todayLabel" class="subtle"></p>
+          <span id="currentProfileBadge" class="profile-badge"></span>
+        </div>
       </div>
-      <button id="settingsBtn" class="icon-btn" aria-label="설정">⚙️</button>
+      <button id="settingsBtn" class="ghost-btn" type="button" aria-label="설정">설정</button>
     </header>
 
     <main>
       <section id="view-home" class="view active" aria-labelledby="home-title">
         <h2 id="home-title" class="sr-only">홈</h2>
-        <article class="card summary-card">
-          <div class="card-head">
-            <h3>오늘 요약</h3>
-            <button class="text-btn" data-go="summary">더보기 ›</button>
+
+        <article class="panel hero-panel">
+          <div class="panel-head">
+            <div>
+              <p class="eyebrow">TODAY</p>
+              <h3>오늘 요약</h3>
+            </div>
+            <button class="text-btn" data-go="summary">자세히</button>
           </div>
-          <div id="homeSummary" class="metric-row"></div>
+          <div id="homeSummary" class="metrics-grid"></div>
         </article>
 
         <section class="quick-grid" aria-label="빠른 이동">
-          <button class="quick-card primary" data-go="entry"><span>＋</span><b>기록 추가</b></button>
-          <button class="quick-card" data-go="summary"><span>📋</span><b>오늘 요약</b></button>
-          <button class="quick-card" data-go="backup"><span>☁️</span><b>백업/복원</b></button>
-          <button class="quick-card" data-go="recent"><span>🕘</span><b>최근 기록</b></button>
+          <button class="quick-card" data-go="entry">
+            <small>RECORD</small>
+            <strong>기록 추가</strong>
+            <span>식사 · 물 · 소변 · 대변 · 처치 입력</span>
+          </button>
+          <button class="quick-card" data-go="summary">
+            <small>SUMMARY</small>
+            <strong>오늘 요약</strong>
+            <span>핵심 수치와 전달사항 확인</span>
+          </button>
+          <button class="quick-card" data-go="backup">
+            <small>BACKUP</small>
+            <strong>백업 / 복원</strong>
+            <span>CSV · JSON 저장과 가져오기</span>
+          </button>
+          <button class="quick-card" data-go="recent">
+            <small>RECENT</small>
+            <strong>최근 기록</strong>
+            <span>날짜별 기록 검토와 삭제</span>
+          </button>
         </section>
 
-        <article class="card warn-card">
-          <h3>주의사항 / 확인할 점</h3>
-          <ul id="attentionList"></ul>
+        <article class="panel">
+          <div class="panel-head single-line">
+            <h3>주의사항 / 확인할 점</h3>
+          </div>
+          <ul id="attentionList" class="plain-list"></ul>
         </article>
       </section>
 
       <section id="view-entry" class="view" aria-labelledby="entry-title">
-        <div class="view-title"><button class="back-btn" data-go="home">‹</button><h2 id="entry-title">기록 추가</h2></div>
-        <form id="entryForm" class="card form-card">
-          <label>시간
+        <div class="view-title">
+          <button class="back-btn" data-go="home" type="button">←</button>
+          <h2 id="entry-title">기록 추가</h2>
+        </div>
+        <form id="entryForm" class="panel form-panel">
+          <label class="field">
+            <span>시간</span>
             <input id="entryTime" type="datetime-local" required />
           </label>
 
-          <fieldset>
+          <fieldset class="fieldset">
             <legend>카테고리</legend>
             <div id="categoryChips" class="chip-grid"></div>
           </fieldset>
 
-          <div class="amount-row">
-            <label>양
+          <div class="form-row two-up">
+            <label class="field">
+              <span>양</span>
               <input id="amount" type="number" inputmode="decimal" min="0" step="0.1" placeholder="예) 330" />
             </label>
-            <label>단위
+            <label class="field">
+              <span>단위</span>
               <select id="unit">
                 <option>mL</option>
                 <option>g</option>
@@ -67,66 +118,144 @@
             </label>
           </div>
 
-          <label id="kcalWrap">kcal
+          <label id="kcalWrap" class="field">
+            <span>kcal</span>
             <input id="kcal" type="number" inputmode="numeric" min="0" step="1" placeholder="예) 400" />
           </label>
 
-          <label>메모
+          <label class="field">
+            <span>메모</span>
             <textarea id="memo" rows="4" placeholder="예) 좌측위 HOB40, 기침 없음, SpO₂ 96"></textarea>
           </label>
 
-          <button class="save-btn" type="submit">저장</button>
+          <button class="primary-btn" type="submit">저장</button>
         </form>
       </section>
 
       <section id="view-summary" class="view" aria-labelledby="summary-title">
-        <div class="view-title"><button class="back-btn" data-go="home">‹</button><h2 id="summary-title">오늘 요약</h2></div>
-        <div id="summaryMetrics" class="summary-grid"></div>
-        <article class="card">
+        <div class="view-title">
+          <button class="back-btn" data-go="home" type="button">←</button>
+          <h2 id="summary-title">오늘 요약</h2>
+        </div>
+        <div id="summaryMetrics" class="metrics-grid metrics-grid-wide"></div>
+
+        <article class="panel">
           <h3>주요 변화</h3>
-          <ul id="changeList"></ul>
+          <ul id="changeList" class="plain-list"></ul>
         </article>
-        <article class="card">
+
+        <article class="panel">
           <h3>직원에게 전달할 내용</h3>
-          <ul id="handoffList"></ul>
+          <ul id="handoffList" class="plain-list"></ul>
         </article>
-        <article class="card">
-          <div class="card-head"><h3>최근 기록</h3><button class="text-btn" data-go="recent">더보기 ›</button></div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h3>최근 기록</h3>
+            <button class="text-btn" data-go="recent">더보기</button>
+          </div>
           <div id="summaryRecent" class="log-list compact"></div>
         </article>
       </section>
 
       <section id="view-backup" class="view" aria-labelledby="backup-title">
-        <div class="view-title"><button class="back-btn" data-go="home">‹</button><h2 id="backup-title">백업 / 복원</h2></div>
-        <div class="backup-list">
-          <button id="exportCsv" class="backup-card"><span class="file green">CSV</span><b>CSV 내보내기</b><small>전체 기록을 CSV 파일로 저장</small></button>
-          <label class="backup-card file-label"><span class="file blue">CSV</span><b>CSV 가져오기</b><small>CSV 파일을 선택하여 복원</small><input id="importCsv" type="file" accept=".csv,text/csv" hidden /></label>
-          <button id="exportJson" class="backup-card"><span class="file purple">JSON</span><b>JSON 백업</b><small>앱 데이터 백업 파일 생성</small></button>
-          <button id="saveDaySummary" class="backup-card"><span class="file orange">요약</span><b>날짜별 요약 저장</b><small>오늘 요약을 텍스트 파일로 저장</small></button>
+        <div class="view-title">
+          <button class="back-btn" data-go="home" type="button">←</button>
+          <h2 id="backup-title">백업 / 복원</h2>
         </div>
-        <article id="backupStatus" class="card success-card hidden"></article>
-        <p class="safe-note">🛡️ 백업 파일은 기기에 저장됩니다. 중요한 데이터는 주기적으로 백업하세요.</p>
+
+        <div class="backup-list">
+          <button id="exportCsv" type="button" class="backup-card">
+            <strong>CSV 내보내기</strong>
+            <span>현재 코드의 전체 기록을 CSV로 저장</span>
+          </button>
+          <label class="backup-card file-label">
+            <strong>CSV 가져오기</strong>
+            <span>CSV 파일을 현재 코드에 병합</span>
+            <input id="importCsv" type="file" accept=".csv,text/csv" hidden />
+          </label>
+          <button id="exportJson" type="button" class="backup-card">
+            <strong>JSON 백업</strong>
+            <span>복원용 원본 데이터를 JSON으로 저장</span>
+          </button>
+          <label class="backup-card file-label">
+            <strong>JSON 가져오기</strong>
+            <span>JSON 파일의 records를 현재 코드에 병합</span>
+            <input id="importJson" type="file" accept=".json,application/json" hidden />
+          </label>
+          <button id="saveDaySummary" type="button" class="backup-card">
+            <strong>오늘 요약 저장</strong>
+            <span>오늘 요약을 TXT 파일로 저장</span>
+          </button>
+        </div>
+
+        <article id="backupStatus" class="panel status-panel hidden"></article>
       </section>
 
       <section id="view-recent" class="view" aria-labelledby="recent-title">
-        <div class="view-title"><button class="back-btn" data-go="home">‹</button><h2 id="recent-title">최근 기록</h2></div>
-        <div class="card filter-card">
-          <label>날짜 선택
-            <input id="filterDate" type="date" />
-          </label>
-          <button id="clearFilter" class="secondary-btn">오늘로 이동</button>
+        <div class="view-title">
+          <button class="back-btn" data-go="home" type="button">←</button>
+          <h2 id="recent-title">최근 기록</h2>
+        </div>
+        <div class="panel filter-panel">
+          <div class="form-row two-up">
+            <label class="field">
+              <span>날짜 선택</span>
+              <input id="filterDate" type="date" />
+            </label>
+            <div class="field action-field">
+              <span>빠른 이동</span>
+              <button id="clearFilter" class="secondary-btn" type="button">오늘로</button>
+            </div>
+          </div>
         </div>
         <div id="recentList" class="log-list"></div>
       </section>
     </main>
 
     <nav class="bottom-nav" aria-label="하단 메뉴">
-      <button class="nav-btn active" data-go="home">⌂<span>홈</span></button>
-      <button class="nav-btn" data-go="entry">▤<span>기록</span></button>
-      <button class="nav-btn" data-go="summary">▣<span>요약</span></button>
-      <button class="nav-btn" data-go="backup">⚙<span>백업</span></button>
+      <button class="nav-btn active" data-go="home" type="button"><span>홈</span></button>
+      <button class="nav-btn" data-go="entry" type="button"><span>기록</span></button>
+      <button class="nav-btn" data-go="summary" type="button"><span>요약</span></button>
+      <button class="nav-btn" data-go="backup" type="button"><span>백업</span></button>
     </nav>
   </div>
+
+  <dialog id="settingsDialog" class="settings-dialog">
+    <form method="dialog" class="settings-sheet">
+      <div class="dialog-head">
+        <h2>설정</h2>
+        <button class="ghost-btn" value="cancel">닫기</button>
+      </div>
+
+      <section class="settings-block">
+        <h3>현재 코드</h3>
+        <p id="settingsCurrentCode" class="code-pill"></p>
+      </section>
+
+      <section class="settings-block">
+        <h3>코드 변경 / 로그인 전환</h3>
+        <label class="field">
+          <span>새 코드</span>
+          <input id="switchProfileInput" type="text" autocomplete="off" placeholder="새 가족 코드 입력" />
+        </label>
+        <div class="button-row">
+          <button id="switchProfileBtn" class="primary-btn" type="button">이 코드로 전환</button>
+          <button id="logoutBtn" class="secondary-btn" type="button">로그아웃</button>
+        </div>
+      </section>
+
+      <section class="settings-block">
+        <h3>기존 브라우저 데이터 찾기</h3>
+        <p class="helper">이 기기에 남아 있는 localStorage 중 기록처럼 보이는 데이터를 찾아준다. 원래 비밀번호 앱의 데이터가 있으면 여기서 현재 코드로 복사할 수 있다.</p>
+        <div class="button-row">
+          <button id="scanLegacyBtn" class="secondary-btn" type="button">데이터 찾기</button>
+          <button id="importLegacyBtn" class="primary-btn" type="button">선택 데이터 가져오기</button>
+        </div>
+        <div id="legacyCandidates" class="legacy-list empty">아직 검색하지 않음</div>
+      </section>
+    </form>
+  </dialog>
 
   <script src="script.js"></script>
 </body>
