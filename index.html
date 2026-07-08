@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 v42 날짜점프안전판</title>
+<title>아버지 케어로그 v42 안전중복정리판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -351,13 +351,10 @@ h1,h2,h3{color:#f8fafc!important}
 .dupMemo{white-space:pre-wrap;word-break:break-word;color:#e5e7eb;margin-top:4px}
 .dupMeta{color:#cbd5e1;font-size:13px}
 .dupActions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
-
-.dateJumpBtn{margin:4px 4px 4px 0;padding:6px 9px;border-radius:10px;background:#7f1d1d!important;color:#fee2e2!important;border:1px solid #fca5a5!important;font-size:14px}
-.dateJumpBox{margin:8px 0}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 날짜점프안전판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 안전중복정리판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -476,11 +473,6 @@ h1,h2,h3{color:#f8fafc!important}
 </div>
 </div>
 </div>
-</div>
-
-
-<div class="okBox">
-  저장 중복 방지: 앞으로 새로 가져오는 기록은 안전중복정리 기준과 같은 기록이 이미 있으면 새로 추가하지 않고 기존 기록을 덮어씁니다.
 </div>
 
 <div class="advancedBox">
@@ -608,8 +600,6 @@ function show(name){
     if($("gptStart")&&!$("gptStart").value) $("gptStart").value=d;
     if($("gptEnd")&&!$("gptEnd").value) $("gptEnd").value=d;
   }
-
-  setTimeout(()=>{try{installImportYearAutoRefresh()}catch(e){}},50);
 }
 
 function normalizeYear(y){
@@ -644,46 +634,26 @@ function dateHeader(line){
   if(!s) return "";
   if(typeof startsTime==="function" && startsTime(s)) return "";
 
-  // 본문/표 안의 수치가 날짜로 오인되는 것을 막는다.
   if(/(알부민|Hb|헤모글로빈|혈색소|albumin|CRP|WBC|Na|K|Cl|BUN|Cr|CRE|VRE|MRSA|대상포진|격리|사유)/i.test(s)
      && !/^\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*(?:[월화수목금토일]|일|—|-|,|\s|$)/.test(s)) return "";
 
-  // 문서 제목/기간 범위: 2025-03-18 ~ 2025-05-19 같은 줄은 날짜 헤더가 아니다.
   if(/^\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*[~～]\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}/.test(s)) return "";
 
-  // 1) 연도 포함 날짜 헤더를 최우선 처리.
-  // 2025.12/8, 2025.12.8, 2025-12-08, 2025년 12월 8일
-  // 이 규칙이 먼저 잡혀야 2025.12/8이 2012-08로 오인되지 않는다.
-  let m=s.match(/^\s*(\d{4})\s*(?:년|[.\-/])\s*(\d{1,2})\s*(?:월|[.\/-])\s*(\d{1,2})(?:\s*일)?(?=\s|$|[월화수목금토일요일,，:：\-—–])/);
-  if(m){
-    const yy=+m[1], mm=+m[2], dd=+m[3];
-    if(yy>=2000 && yy<=2100 && mm>=1 && mm<=12 && dd>=1 && dd<=31){
-      const rest=s.slice(m[0].length).trim();
-      if(!rest || /^[월화수목금토일](?:요일)?(?:\s|$)/.test(rest) || /^(?:-|—|–|,|，)/.test(rest) || /(일차|기록|요약|로그)/.test(rest)){
-        return `${yy}-${pad(mm)}-${pad(dd)}`;
-      }
-    }
-  }
-
-  // 2) 두 자리 연도 포함 날짜: 25.12/8 → 2025-12-08
-  m=s.match(/^\s*(\d{2})\s*(?:년|[.\-/])\s*(\d{1,2})\s*(?:월|[.\/-])\s*(\d{1,2})(?:\s*일)?(?=\s|$|[월화수목금토일요일,，:：\-—–])/);
+  let m=s.match(/^\s*(\d{2,4})\s*[.\-/년]\s*(\d{1,2})\s*[.\/월-]\s*(\d{1,2})(?:\s*일)?/);
   if(m){
     const yy=normalizeYear(m[1]), mm=+m[2], dd=+m[3];
-    if(mm>=1 && mm<=12 && dd>=1 && dd<=31){
+    if(mm>=1&&mm<=12&&dd>=1&&dd<=31){
       const rest=s.slice(m[0].length).trim();
-      if(!rest || /^[월화수목금토일](?:요일)?(?:\s|$)/.test(rest) || /^(?:-|—|–|,|，)/.test(rest) || /(일차|기록|요약|로그)/.test(rest)){
+      if(!rest || /^[월화수목금토일](?:요일)?(?:\s|$)/.test(rest) || /^(?:-|—|–|,)/.test(rest) || /(일차|기록|요약|로그)/.test(rest)){
         return `${yy}-${pad(mm)}-${pad(dd)}`;
       }
     }
   }
 
-  // 3) 연도 없는 날짜 헤더: 기본 연도 선택값 사용.
-  // 12/8 월 132일차, 12월 8일
-  // 12.8은 검사수치와 헷갈려 허용하지 않는다.
   m=s.match(/^\s*(\d{1,2})\s*(?:\/|월\s*)(\d{1,2})(?:\s*일)?/);
   if(m && /(^어제|^오늘|기록|일차|요약|로그|월요일|화요일|수요일|목요일|금요일|토요일|일요일|[월화수목금토일](?:요일)?(?:\s|$))/.test(s)){
     const mm=+m[1], dd=+m[2];
-    if(mm>=1 && mm<=12 && dd>=1 && dd<=31) return `${importBaseYear()}-${pad(mm)}-${pad(dd)}`;
+    if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return `${importBaseYear()}-${pad(mm)}-${pad(dd)}`;
   }
 
   if(/^어제\s*(기록|요약|로그)?$/.test(s)){
@@ -693,7 +663,6 @@ function dateHeader(line){
   if(/^오늘\s*(기록|요약|로그)?$/.test(s)) return localDate();
   return "";
 }
-
 
 
 
@@ -892,22 +861,23 @@ function normalizeCareLogTextForParser(text){
   s=s.replace(/[ \t]+/g," ");
 
   // TXT/메모 export에서 여러 기록이 한 줄로 붙는 경우를 줄 단위로 복구.
+  // 예: "... ㅇ3:50 소변 75g ㅇ4:05 ROM" → 각 시간 기록 앞에 줄바꿈.
   s=s.replace(/([^\n])\s+([ㅇoO○]\s*\d{1,2}\s*[:：]\s*\d{1,2})/g,"$1\n$2");
   s=s.replace(/([^\n])\s+([ㅇoO○]\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?)/g,"$1\n$2");
+
+  // 글머리표 시간 기록도 복구.
   s=s.replace(/([^\n])\s+([\-•*]\s*\d{1,2}\s*[:：]\s*\d{1,2})/g,"$1\n$2");
   s=s.replace(/([^\n])\s+([\-•*]\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?)/g,"$1\n$2");
 
-  // 날짜 헤더 복구. 2025.12/8 같은 4자리 연도 날짜를 가장 먼저 보호한다.
-  s=s.replace(/([^\n])\s+((?:20\d{2})\s*(?:년|[.\-/])\s*\d{1,2}\s*(?:월|[.\/-])\s*\d{1,2}(?:\s*일)?\s*(?:[월화수목금토일]|요일|기록|일차|$))/g,"$1\n$2");
-  s=s.replace(/([^\n])\s+((?:\d{2})\s*(?:년|[.\-/])\s*\d{1,2}\s*(?:월|[.\/-])\s*\d{1,2}(?:\s*일)?\s*(?:[월화수목금토일]|요일|기록|일차|$))/g,"$1\n$2");
+  // 날짜 헤더가 앞 문장에 붙는 경우 복구.
+  s=s.replace(/([^\n])\s+((?:20\d{2}|\d{2})\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*(?:[월화수목금토일]|일|—|-|,|\s))/g,"$1\n$2");
   s=s.replace(/([^\n])\s+(\d{1,2}\s*(?:\/|월\s*)\d{1,2}(?:\s*일)?\s*(?:[월화수목금토일]|요일|기록|일차))/g,"$1\n$2");
 
-  // 하위 설명 분리
+  // iPhone 메모에서 하위 설명이 " - "로 붙는 경우 줄 분리.
   s=s.replace(/([^\n])\s+(-\s+)/g,"$1\n$2");
 
   return s.trim();
 }
-
 
 function gptImportRawText(){
   return getImportText("file");
@@ -982,80 +952,10 @@ function parsePasteText(){
 
 
 
-async 
-function saveOverwriteKey(r){
-  // 안전중복정리 기준과 같은 계열로 저장 중복을 막는다.
-  // 긴 서술 메모: 같은 날짜 + 같은 본문 + 같은 꼬리표
-  // 짧은/수치/처치 기록: 같은 날짜시간 + 종류 + 수치내용
-  return bulkDuplicateKey(r);
-}
-
-function existingRecordByOverwriteKeyMap(){
-  const map=new Map();
-  for(const r of allRows||[]){
-    const k=saveOverwriteKey(r);
-    if(k && k!=="||") map.set(k,r);
-  }
-  return map;
-}
-
-function dedupeIncomingRowsForSave(rows){
-  const map=new Map();
-  let merged=0;
-  for(const r of rows||[]){
-    const k=saveOverwriteKey(r);
-    if(k && map.has(k)) merged++;
-    map.set(k||recordId(r),r); // 같은 묶음이면 뒤 기록이 앞 기록을 덮어씀
-  }
-  const out=Array.from(map.values());
-  out._mergedIncoming=merged;
-  out._originalCount=(rows||[]).length;
-  return out;
-}
-
-function saveOverwriteSelfTest(){
-  const old=allRows;
-  allRows=[
-    {dt:"2026-07-02T01:40",type:"구강청소",memo:"",id:"old_mouth"},
-    {dt:"2025-09-29T11:51",type:"석션",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리: 석션]",id:"old_long"}
-  ];
-  const newRows=[
-    {dt:"2026-07-02T05:55",type:"구강청소",memo:"",id:"new_mouth_different_time"},
-    {dt:"2025-09-29T16:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리 : 석션]",id:"new_long_duplicate"}
-  ];
-  const existing=existingRecordByOverwriteKeyMap();
-  const mouthHit=existing.get(saveOverwriteKey(newRows[0]));
-  const longHit=existing.get(saveOverwriteKey(newRows[1]));
-  allRows=old;
-  return {
-    ok: !mouthHit && !!longHit && longHit.id==="old_long",
-    mouthHit,
-    longHit,
-    rule:bulkDuplicateRuleText()
-  };
-}
-
 async function saveRows(rows){
   if(!roomPath){alert("먼저 입장하세요.");show("join");return}
-  const incoming=dedupeIncomingRowsForSave(rows||[]);
-  const existing=existingRecordByOverwriteKeyMap();
-  let created=0, overwritten=0, merged=incoming._mergedIncoming||0;
-
-  for(const r of incoming){
-    const k=saveOverwriteKey(r);
-    const old=k ? existing.get(k) : null;
-    const id=old ? (old.id||old.key||recordId(old)) : recordId(r);
-    const saved={...old,...r,key:id};
-    await setDoc(doc(db,roomPath,id),saved,{merge:false});
-    existing.set(k,saved);
-    if(old) overwritten++;
-    else created++;
-  }
-
-  window._lastSaveOverwriteStats={created,overwritten,merged,original:(rows||[]).length,final:incoming.length};
-  return window._lastSaveOverwriteStats;
+  for(const r of rows){const id=recordId(r);await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false})}
 }
-
 
 function fillInputFromRecord(r){
   $("dt").value=r.dt||nowInput();
@@ -1269,11 +1169,6 @@ function detectDateWarnings(rows, sourceText=""){
       warnings.push(`날짜 범위가 ${sorted[0]}~${sorted[sorted.length-1]}로 넓습니다. 중간 날짜 헤더가 누락됐는지 확인하세요.`);
     }
   }
-  
-  const suspicious=dates.filter(d=>/^20(0\d|1\d)-/.test(d));
-  if(suspicious.length){
-    warnings.push(`2012년처럼 비정상적으로 오래된 연도가 감지되었습니다: ${[...new Set(suspicious)].slice(0,20).join(", ")}. 2025.12/8 같은 날짜가 잘못 해석됐는지 확인하세요.`);
-  }
   return warnings.concat(detectYearWarnings(rows,sourceText));
 }
 
@@ -1284,9 +1179,8 @@ function warningHtml(warnings){
 
 function safetyPreviewHtml(rows, sourceText=""){
   rows=dedupeRows(rows||[]);
-  return warningHtml(detectDateWarnings(rows,sourceText)) + suspiciousDateButtonsHtml(rows) + dateCountTableHtml(rows) + "\n<pre>" + escapeHtml(groupedPreviewText(rows)) + "</pre>";
+  return warningHtml(detectDateWarnings(rows,sourceText)) + dateCountTableHtml(rows) + "\n<pre>" + escapeHtml(groupedPreviewText(rows)) + "</pre>";
 }
-
 
 function safetyPreviewSelfTest(){
   const sample=`아버지 기록 복원본
@@ -2046,9 +1940,9 @@ async function saveImportRows(kind){
   if(!confirm(importSummaryMessage(kind,rows,rawText))) return;
   if(kind==="file") setGptInStatus("저장 중...");
   try{
-    const stats=await saveRows(rows);
+    await saveRows(rows);
     const savedSummaries=await savePastedDailySummaries(rows);
-    alert(`저장 완료\n읽은 기록 ${rows.length.toLocaleString()}개\n새로 저장 ${stats?.created??0}개\n기존 덮어쓰기 ${stats?.overwritten??0}개\n불러온 묶음 내부 중복 병합 ${stats?.merged??0}개\n날짜별 요약 ${savedSummaries}일치`);
+    alert(`저장 완료\n기록 ${rows.length.toLocaleString()}개\n날짜별 요약 ${savedSummaries}일치`);
     if(kind==="file") clearGptIn();
     else { $("pasteLog").value=""; $("pastePreview").textContent=""; }
     show("records");
@@ -2311,137 +2205,7 @@ function selectiveDedupeSelfTest(){
 
 
 
-function decemberDateFixSelfTest(){
-  const oldMode=$("gptImportYearMode")?.value || $("importYearMode")?.value;
-  const oldCustom=$("gptImportYearCustom")?.value || $("importYearCustom")?.value;
-  if($("gptImportYearMode")) $("gptImportYearMode").value="2025";
-  if($("gptImportYearCustom")) $("gptImportYearCustom").value="2025";
-  syncImportYearBox("gpt");
-
-  const sample=`2025.12/8 월 132일차
-ㅇ아이스거즈 만들기
-ㅇ10:30 수동적 ROM, 앉기 연습
-
-2025.12/1 월 125일차
-ㅇ14:30 일산백병원 신경외과 외래 진료 후 응급실 거쳐 내과병동 입원
-ㅇ응급실에서 수혈 함.
-
-12/2 화 126일차
-ㅇ아버지 아침식사가 나왔음. 350ml.`;
-  const rows=parseTextToRows(sample);
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)))].sort();
-
-  if($("gptImportYearMode")) $("gptImportYearMode").value=oldMode||"2026";
-  if($("gptImportYearCustom")) $("gptImportYearCustom").value=oldCustom||"2026";
-  syncImportYearBox("gpt");
-
-  return {
-    ok: dates.includes("2025-12-08") && dates.includes("2025-12-01") && dates.includes("2025-12-02") && !dates.some(d=>d.startsWith("2012-")),
-    dates,
-    rows
-  };
-}
-
-function refreshImportPreviewSoon(){
-  clearTimeout(window._refreshImportPreviewTimer);
-  window._refreshImportPreviewTimer=setTimeout(()=>{
-    try{
-      if(typeof previewGptIn==="function" && $("gptInText") && val("gptInText")) previewGptIn();
-      if(typeof previewPaste==="function" && $("pasteLog") && val("pasteLog")) previewPaste();
-    }catch(e){
-      console.warn("preview refresh skipped",e);
-    }
-  },300);
-}
-
-function installImportYearAutoRefresh(){
-  const ids=["importYearMode","importYearCustom","gptImportYearMode","gptImportYearCustom"];
-  ids.forEach(id=>{
-    const el=$(id);
-    if(el && !el.dataset.autoRefreshBound){
-      el.dataset.autoRefreshBound="1";
-      el.addEventListener("change",refreshImportPreviewSoon);
-      el.addEventListener("input",refreshImportPreviewSoon);
-    }
-  });
-}
-
-function sourceTextAreaForDateJump(){
-  return $("gptInText") || $("pasteLog");
-}
-
-function sourceTextForDateJump(){
-  const el=sourceTextAreaForDateJump();
-  return el ? el.value : "";
-}
-
-function possibleOriginalDatePatternsForParsedDate(dateStr){
-  const m=String(dateStr||"").match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if(!m) return [];
-  const y=m[1], mm=String(+m[2]), dd=String(+m[3]), mm2=m[2], dd2=m[3];
-  const base=(typeof importBaseYear==="function"?importBaseYear():new Date().getFullYear());
-  const patterns=[
-    `${y}.${mm}/${dd}`,`${y}.${mm2}/${dd}`,`${y}-${mm2}-${dd2}`,`${y}/${mm}/${dd}`,`${y}년 ${mm}월 ${dd}일`,
-    `${base}.${mm}/${dd}`,`${base}.${mm2}/${dd}`,`${base}-${mm2}-${dd2}`,`${base}/${mm}/${dd}`,`${base}년 ${mm}월 ${dd}일`,
-    `2025.${mm}/${dd}`,`2025.${mm2}/${dd}`,`2025-${mm2}-${dd2}`,`2025/${mm}/${dd}`,`2025년 ${mm}월 ${dd}일`,
-    `${mm}/${dd}`,`${mm}월 ${dd}일`
-  ];
-  return [...new Set(patterns)];
-}
-
-function findDateInImportText(dateStr){
-  const text=sourceTextForDateJump();
-  if(!text) return -1;
-  for(const p of possibleOriginalDatePatternsForParsedDate(dateStr)){
-    const idx=text.indexOf(p);
-    if(idx>=0) return idx;
-  }
-  const m=String(dateStr||"").match(/^\d{4}-(\d{2})-(\d{2})$/);
-  if(m){
-    const mm=String(+m[1]), dd=String(+m[2]);
-    const re=new RegExp(`(?:20\\d{2}[.\\-/년]\\s*)?${mm}\\s*(?:/|월\\s*)${dd}(?:\\s*일)?`);
-    const found=text.search(re);
-    if(found>=0) return found;
-  }
-  return -1;
-}
-
-function jumpToImportDate(dateStr){
-  const ta=sourceTextAreaForDateJump();
-  if(!ta){alert("불러오기 본문을 찾지 못했습니다.");return;}
-  const idx=findDateInImportText(dateStr);
-  if(idx<0){alert(`${dateStr} 위치를 본문에서 찾지 못했습니다.`);return;}
-  try{
-    ta.focus();
-    const start=Math.max(0,idx-30);
-    const end=Math.min(ta.value.length,idx+80);
-    ta.setSelectionRange(start,end);
-    const before=ta.value.slice(0,idx);
-    const line=before.split("\n").length;
-    const total=ta.value.split("\n").length||1;
-    ta.scrollTop=(line/total)*ta.scrollHeight;
-    ta.scrollIntoView({block:"center",behavior:"smooth"});
-  }catch(e){
-    alert("본문 위치 이동 중 오류: "+e.message);
-  }
-}
-
-function suspiciousDateButtonsHtml(rows){
-  const dates=[...new Set((rows||[]).map(r=>(r.dt||"").slice(0,10)).filter(d=>/^20(0\d|1\d)-/.test(d)))].sort();
-  if(!dates.length) return "";
-  return `<div class="dateJumpBox"><b>이상 날짜 위치 찾기:</b><br>${dates.map(d=>`<button class="dateJumpBtn" onclick="jumpToImportDate('${d}')">${d}</button>`).join("")}</div>`;
-}
-
-function dateJumpSafeSelfTest(){
-  const old=$("gptInText")?.value||"";
-  if($("gptInText")) $("gptInText").value="2025.12/8 월 132일차\nㅇ10:30 수동적 ROM";
-  const idx=findDateInImportText("2012-12-08");
-  if($("gptInText")) $("gptInText").value=old;
-  return {ok:idx>=0, idx, patterns:possibleOriginalDatePatternsForParsedDate("2012-12-08").slice(0,12)};
-}
-
-document.addEventListener('DOMContentLoaded',()=>{try{installImportYearAutoRefresh()}catch(e){}});
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe,saveOverwriteKey,saveOverwriteSelfTest,dedupeIncomingRowsForSave,decemberDateFixSelfTest,jumpToImportDate,dateJumpSafeSelfTest,refreshImportPreviewSoon});
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe});
 </script>
 </body>
 </html>
