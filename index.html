@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 v42 꼬리표구분중복정리판</title>
+<title>아버지 케어로그 v42 안전중복정리판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -354,7 +354,7 @@ h1,h2,h3{color:#f8fafc!important}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 꼬리표구분중복정리판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 안전중복정리판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -2008,20 +2008,45 @@ function stableRecordTextForDedupe(r){
 }
 
 
-function bulkDuplicateKey(r){
-  const text=stableRecordTextForDedupe(r);
-  // 너무 짧은 메모는 정상 반복 가능성이 커서 종류까지 포함해 조금 더 보수적으로 본다.
-  if(text.length<12){
-    return [(r&&r.dt||"").slice(0,10), r&&r.type||"", text].join("|");
+
+function structuredDedupeSignature(r){
+  const fields=["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob"];
+  const parts=[];
+  for(const f of fields){
+    const v=r&&r[f];
+    if(v!==undefined && v!==null && v!=="") parts.push(`${f}:${v}`);
   }
-  // 긴 메모는 같은 날짜 + 같은 내용이면 중복 후보. 시간과 종류는 무시한다.
-  return [(r&&r.dt||"").slice(0,10), text].join("|");
+  const pos=String(r&&r.position||"").trim();
+  const posDetail=String(r&&r.positionDetail||"").trim();
+  const breath=String(r&&r.breath||"").trim();
+  if(pos) parts.push(`position:${pos}`);
+  if(posDetail) parts.push(`positionDetail:${posDetail}`);
+  if(breath) parts.push(`breath:${breath}`);
+  return parts.join("|");
 }
+function isLongMemoForLooseDedupe(r){
+  return stableRecordTextForDedupe(r).length>=24;
+}
+
+function bulkDuplicateKey(r){
+  const date=(r&&r.dt||"").slice(0,10);
+  const time=(r&&r.dt||"").slice(0,16);
+  const type=r&&r.type||"";
+  const text=stableRecordTextForDedupe(r);
+  const structured=structuredDedupeSignature(r);
+
+  if(isLongMemoForLooseDedupe(r)){
+    return [date,text].join("|");
+  }
+  return [time,type,text,structured].join("|");
+}
+
 
 
 function bulkDuplicateRuleText(){
-  return "같은 날짜 + 정규화한 내용 + 같은 꼬리표. 꼬리표가 다르면 중복 아님";
+  return "긴 메모: 같은 날짜+같은 본문+같은 꼬리표 / 짧은·수치·처치 기록: 같은 날짜시간+종류+수치내용";
 }
+
 
 
 function findBulkDuplicates(){
@@ -2068,18 +2093,18 @@ async function removeBulkDuplicates(){
 }
 function bulkDedupeSelfTest(){
   const sample=[
-    {dt:"2025-09-29T11:51",type:"석션",memo:"그르렁 있음\n피딩시간이 늦어지자, 네뷸 가습, 토닥이, 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음.\n[자동분리: 석션]",id:"a"},
-    {dt:"2025-09-29T16:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리: 석션]",id:"b"},
-    {dt:"2025-09-29T16:10",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리: 네뷸]",id:"c"}
+    {dt:"2026-06-20T19:00",type:"대소변",memo:"",urine:360,id:"urine"},
+    {dt:"2026-06-20T23:59",type:"대소변",memo:"",stool:130,id:"stool"},
+    {dt:"2026-07-02T01:40",type:"구강청소",memo:"",id:"mouth1"},
+    {dt:"2026-07-02T05:55",type:"구강청소",memo:"",id:"mouth2"},
+    {dt:"2025-09-29T11:51",type:"석션",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리: 석션]",id:"a"},
+    {dt:"2025-09-29T16:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리 : 석션]",id:"b"}
   ];
   const old=allRows; allRows=sample;
   const r=findBulkDuplicates(); allRows=old;
-  return {
-    ok:r.duplicates.length===1 && r.duplicates[0].remove.id==="b",
-    rule:bulkDuplicateRuleText(),
-    result:r
-  };
+  return {ok:r.duplicates.length===1 && r.duplicates[0].remove.id==="b", rule:bulkDuplicateRuleText(), result:r};
 }
+
 
 
 
@@ -2163,24 +2188,24 @@ async function deleteSelectedBulkDuplicates(){
 }
 function selectiveDedupeSelfTest(){
   const sample=[
-    {dt:"2025-09-29T11:51",type:"석션",memo:"그르렁 있음\n피딩시간이 늦어지자, 네뷸 가습, 토닥이, 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음.\n[자동분리: 석션]",id:"a"},
-    {dt:"2025-09-29T11:52",type:"석션",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리 : 석션]",id:"b"},
-    {dt:"2025-09-29T16:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리: 네뷸]",id:"c"},
-    {dt:"2025-09-29T17:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음",id:"d"}
+    {dt:"2026-06-20T19:00",type:"대소변",memo:"",urine:360,id:"urine"},
+    {dt:"2026-06-20T23:59",type:"대소변",memo:"",stool:130,id:"stool"},
+    {dt:"2026-07-02T01:40",type:"구강청소",memo:"",id:"mouth1"},
+    {dt:"2026-07-02T05:55",type:"구강청소",memo:"",id:"mouth2"},
+    {dt:"2025-09-29T11:51",type:"석션",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리: 석션]",id:"a"},
+    {dt:"2025-09-29T16:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리 : 석션]",id:"b"},
+    {dt:"2025-09-29T17:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리: 네뷸]",id:"c"}
   ];
   const old=allRows; allRows=sample;
   const r=groupedBulkDuplicates(); allRows=old;
-  return {
-    ok:r.groups.length===1 && r.duplicateCount===1 && r.groups[0].removes.length===1,
-    rule:bulkDuplicateRuleText(),
-    result:r
-  };
+  return {ok:r.groups.length===1 && r.duplicateCount===1 && r.groups[0].removes[0].id==="b", rule:bulkDuplicateRuleText(), result:r};
 }
 
 
 
 
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText});
+
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe});
 </script>
 </body>
 </html>
