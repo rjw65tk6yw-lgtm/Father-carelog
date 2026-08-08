@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 v42 안전중복+첨부미리보기판</title>
+<title>아버지 케어로그 v42 안전중복 기록미디어재생판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -352,19 +352,60 @@ h1,h2,h3{color:#f8fafc!important}
 .dupMeta{color:#cbd5e1;font-size:13px}
 .dupActions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 
-.recordMediaGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
-.recordMediaItem{border:1px solid #334155;background:#0f172a;border-radius:12px;padding:8px;overflow:hidden}
-.recordMediaItem img{display:block;width:100%;max-height:280px;object-fit:contain;border-radius:8px;background:#020617}
-.recordMediaItem video{display:block;width:100%;max-height:320px;border-radius:8px;background:#000}
-.recordMediaName{margin-top:6px;font-size:13px;color:#cbd5e1;word-break:break-all}
-.recordMediaActions{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;align-items:center}
-.recordMediaActions a,.recordMediaActions button{font-size:13px!important;padding:6px 8px!important;min-height:auto!important}
-@media(max-width:760px){.recordMediaGrid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.recordMediaGrid{
+  display:grid;
+  grid-template-columns:1fr;
+  gap:12px;
+  margin:12px 0 14px;
+  width:100%;
+}
+.recordMediaItem{
+  width:100%;
+  border:1px solid #334155;
+  background:#0b1220;
+  border-radius:14px;
+  padding:10px;
+  overflow:hidden;
+}
+.recordMediaItem img{
+  display:block;
+  width:100%;
+  max-height:440px;
+  object-fit:contain;
+  border-radius:10px;
+  background:#020617;
+}
+.recordMediaItem video{
+  display:block;
+  width:100%;
+  max-height:440px;
+  border-radius:10px;
+  background:#000;
+}
+.recordMediaName{
+  margin-top:7px;
+  font-size:13px;
+  color:#cbd5e1;
+  word-break:break-all;
+}
+.recordMediaActions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:7px;
+  align-items:center;
+}
+.recordMediaActions a,
+.recordMediaActions button{
+  font-size:13px!important;
+  padding:7px 9px!important;
+  min-height:auto!important;
+}
 
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 안전중복+첨부미리보기판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 안전중복 기록미디어재생판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -1394,7 +1435,6 @@ function mediaHtml(r){
     const url=String(m&&m.url||"");
     let typ=String(m&&m.type||"").toLowerCase();
 
-    // 과거 첨부 중 MIME type이 빠진 경우 파일명/URL 확장자로 보완
     if(!typ){
       const probe=String((m&&m.name)||url);
       if(/\.(jpg|jpeg|png|gif|webp|heic)(?:$|\?)/i.test(probe)) typ="image/unknown";
@@ -1470,7 +1510,8 @@ function render(){
     return `<div class="rec">
       <h3>${r.dt||""} [${r.type||""}] ${warn}</h3>
       <div class="small">${d}</div>
-      <div class="memo">${memo}</div>${mediaHtml(r)}
+      <div class="memo">${memo}</div>
+      ${mediaHtml(r)}
       <button onclick="editRecord('${id}')">수정</button>
       <button class="danger" onclick="deleteRecord('${id}')">삭제</button>
     </div>`;
@@ -2261,21 +2302,17 @@ function selectiveDedupeSelfTest(){
 
 
 
-function safeDedupeMediaPreviewSelfTest(){
-  const out=mediaHtml({
-    id:"test",
-    media:[
-      {name:"photo.jpg",type:"image/jpeg",url:"https://example.com/photo.jpg"},
-      {name:"movie.mp4",type:"video/mp4",url:"https://example.com/movie.mp4"}
-    ]
-  });
+function recordExpandMediaSelfTest(){
+  const photo={id:"p",media:[{name:"photo.jpg",type:"image/jpeg",url:"https://example.com/photo.jpg"}]};
+  const video={id:"v",media:[{name:"movie.mp4",type:"video/mp4",url:"https://example.com/movie.mp4"}]};
+  const a=mediaHtml(photo), b=mediaHtml(video);
   return {
-    ok:out.includes("<img") && out.includes("<video") &&
-       out.includes("photo.jpg") && out.includes("movie.mp4")
+    ok:a.includes("<img") && b.includes("<video controls playsinline") &&
+       document.documentElement.innerHTML.includes("${mediaHtml(r)}")
   };
 }
 
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe,safeDedupeMediaPreviewSelfTest});
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe,recordExpandMediaSelfTest});
 </script>
 </body>
 </html>
