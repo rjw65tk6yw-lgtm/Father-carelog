@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 v42 안전중복 기록미디어재생판</title>
+<title>아버지 케어로그 v42 안전중복정리판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -351,61 +351,10 @@ h1,h2,h3{color:#f8fafc!important}
 .dupMemo{white-space:pre-wrap;word-break:break-word;color:#e5e7eb;margin-top:4px}
 .dupMeta{color:#cbd5e1;font-size:13px}
 .dupActions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
-
-.recordMediaGrid{
-  display:grid;
-  grid-template-columns:1fr;
-  gap:12px;
-  margin:12px 0 14px;
-  width:100%;
-}
-.recordMediaItem{
-  width:100%;
-  border:1px solid #334155;
-  background:#0b1220;
-  border-radius:14px;
-  padding:10px;
-  overflow:hidden;
-}
-.recordMediaItem img{
-  display:block;
-  width:100%;
-  max-height:440px;
-  object-fit:contain;
-  border-radius:10px;
-  background:#020617;
-}
-.recordMediaItem video{
-  display:block;
-  width:100%;
-  max-height:440px;
-  border-radius:10px;
-  background:#000;
-}
-.recordMediaName{
-  margin-top:7px;
-  font-size:13px;
-  color:#cbd5e1;
-  word-break:break-all;
-}
-.recordMediaActions{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  margin-top:7px;
-  align-items:center;
-}
-.recordMediaActions a,
-.recordMediaActions button{
-  font-size:13px!important;
-  padding:7px 9px!important;
-  min-height:auto!important;
-}
-
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 안전중복 기록미디어재생판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 v42 안전중복정리판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -1423,65 +1372,21 @@ async function uploadMediaFiles(recordId){
   return out;
 }
 function mediaHtml(r){
-  const list=Array.isArray(r&&r.media) ? r.media :
-             (Array.isArray(r&&r.attachments) ? r.attachments : []);
+  const list=r.media||r.attachments||[];
   if(!list.length) return "";
-
   const recId=r.id||r.key||(typeof recordId==="function"?recordId(r):"");
-  const safeRec=safeIdForButton(recId);
-
   const items=list.map((m,idx)=>{
-    const name=escapeHtml(m&&m.name||`첨부 ${idx+1}`);
-    const url=String(m&&m.url||"");
-    let typ=String(m&&m.type||"").toLowerCase();
-
-    if(!typ){
-      const probe=String((m&&m.name)||url);
-      if(/\.(jpg|jpeg|png|gif|webp|heic)(?:$|\?)/i.test(probe)) typ="image/unknown";
-      else if(/\.(mp4|mov|m4v|webm)(?:$|\?)/i.test(probe)) typ="video/unknown";
-    }
-
-    const del=typeof deleteMediaAttachment==="function"
-      ? `<button class="mediaDelete" onclick="deleteMediaAttachment('${safeRec}',${idx})">첨부 삭제</button>`
-      : "";
-
-    if(/^image\//.test(typ)){
-      return `<div class="recordMediaItem">
-        <a href="${url}" target="_blank" rel="noopener">
-          <img loading="lazy" src="${url}" alt="${name}">
-        </a>
-        <div class="recordMediaName">${name}</div>
-        <div class="recordMediaActions">
-          <a href="${url}" target="_blank" rel="noopener">원본 열기</a>
-          ${del}
-        </div>
-      </div>`;
-    }
-
-    if(/^video\//.test(typ)){
-      return `<div class="recordMediaItem">
-        <video controls playsinline preload="metadata" src="${url}"></video>
-        <div class="recordMediaName">${name}</div>
-        <div class="recordMediaActions">
-          <a href="${url}" target="_blank" rel="noopener">원본 열기</a>
-          ${del}
-        </div>
-      </div>`;
-    }
-
-    return `<div class="recordMediaItem">
-      <div class="note">첨부 미리보기 형식을 확인하지 못했습니다.</div>
-      <div class="recordMediaName">${name}</div>
-      <div class="recordMediaActions">
-        ${url?`<a href="${url}" target="_blank" rel="noopener">원본 열기</a>`:""}
-        ${del}
-      </div>
-    </div>`;
+    const name=escapeHtml(m.name||"첨부파일");
+    const url=m.url||"";
+    const typ=m.type||"";
+    const path=m.path||"";
+    const deleteBtn=`<button class="mediaDelete" onclick="deleteMediaAttachment('${safeIdForButton(recId)}',${idx})">첨부 삭제</button>`;
+    if(/^image\//.test(typ)) return `<div class="mediaThumb"><a href="${url}" target="_blank"><img src="${url}" alt="${name}"></a><div class="mediaLink">${name}</div>${deleteBtn}</div>`;
+    if(/^video\//.test(typ)) return `<div class="mediaThumb"><video controls src="${url}"></video><div class="mediaLink"><a href="${url}" target="_blank">${name} 열기</a></div>${deleteBtn}</div>`;
+    return `<div class="mediaThumb"><div class="mediaLink"><a href="${url}" target="_blank">${name} 열기</a></div>${deleteBtn}</div>`;
   }).join("");
-
-  return `<div class="recordMediaGrid">${items}</div>`;
+  return `<div class="mediaGrid">${items}</div>`;
 }
-
 
 function clearMediaInput(){
   const input=$("mediaFiles");
@@ -1511,7 +1416,6 @@ function render(){
       <h3>${r.dt||""} [${r.type||""}] ${warn}</h3>
       <div class="small">${d}</div>
       <div class="memo">${memo}</div>
-      ${mediaHtml(r)}
       <button onclick="editRecord('${id}')">수정</button>
       <button class="danger" onclick="deleteRecord('${id}')">삭제</button>
     </div>`;
@@ -2301,18 +2205,7 @@ function selectiveDedupeSelfTest(){
 
 
 
-
-function recordExpandMediaSelfTest(){
-  const photo={id:"p",media:[{name:"photo.jpg",type:"image/jpeg",url:"https://example.com/photo.jpg"}]};
-  const video={id:"v",media:[{name:"movie.mp4",type:"video/mp4",url:"https://example.com/movie.mp4"}]};
-  const a=mediaHtml(photo), b=mediaHtml(video);
-  return {
-    ok:a.includes("<img") && b.includes("<video controls playsinline") &&
-       document.documentElement.innerHTML.includes("${mediaHtml(r)}")
-  };
-}
-
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe,recordExpandMediaSelfTest});
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe});
 </script>
 </body>
 </html>
