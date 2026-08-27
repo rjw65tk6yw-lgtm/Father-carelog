@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 v42 안전중복정리판</title>
+<title>아버지 케어로그 V43 Sol 안정화판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -351,10 +351,20 @@ h1,h2,h3{color:#f8fafc!important}
 .dupMemo{white-space:pre-wrap;word-break:break-word;color:#e5e7eb;margin-top:4px}
 .dupMeta{color:#cbd5e1;font-size:13px}
 .dupActions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+
+/* V43 Sol 안정화판 */
+.solMediaGrid{display:grid;grid-template-columns:1fr;gap:12px;margin:12px 0 14px;width:100%}
+.solMediaItem{width:100%;border:1px solid #334155;background:#0b1220;border-radius:14px;padding:10px;overflow:hidden}
+.solMediaItem img{display:block;width:100%;max-height:440px;object-fit:contain;border-radius:10px;background:#020617}
+.solMediaItem video{display:block;width:100%;max-height:440px;border-radius:10px;background:#000}
+.solMediaName{margin-top:7px;font-size:13px;color:#cbd5e1;word-break:break-all}
+.solMediaActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px;align-items:center}
+.solMediaActions a,.solMediaActions button{font-size:13px!important;padding:7px 9px!important;min-height:auto!important}
+
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 v42 안전중복정리판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 V43 Sol 안정화판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -484,6 +494,13 @@ h1,h2,h3{color:#f8fafc!important}
   </div>
 <div id="bulkDuplicateReview"></div>
 
+</div>
+
+
+<div class="advancedBox">
+  <h3>V43 Sol 앱 자체점검</h3>
+  <div class="note">입장 상태, 기록 로드, 안전중복, TXT 파서, 사진·동영상 미리보기, Storage, 날짜 파서를 한 번에 점검합니다.</div>
+  <button onclick="appHealthCheck()">앱 자체점검 실행</button>
 </div>
 
 </section>
@@ -634,26 +651,46 @@ function dateHeader(line){
   if(!s) return "";
   if(typeof startsTime==="function" && startsTime(s)) return "";
 
+  // 본문/표 안의 수치가 날짜로 오인되는 것을 막는다.
   if(/(알부민|Hb|헤모글로빈|혈색소|albumin|CRP|WBC|Na|K|Cl|BUN|Cr|CRE|VRE|MRSA|대상포진|격리|사유)/i.test(s)
      && !/^\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*(?:[월화수목금토일]|일|—|-|,|\s|$)/.test(s)) return "";
 
+  // 문서 제목/기간 범위: 2025-03-18 ~ 2025-05-19 같은 줄은 날짜 헤더가 아니다.
   if(/^\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*[~～]\s*\d{4}\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}/.test(s)) return "";
 
-  let m=s.match(/^\s*(\d{2,4})\s*[.\-/년]\s*(\d{1,2})\s*[.\/월-]\s*(\d{1,2})(?:\s*일)?/);
+  // 1) 연도 포함 날짜 헤더를 최우선 처리.
+  // 2025.12/8, 2025.12.8, 2025-12-08, 2025년 12월 8일
+  // 이 규칙이 먼저 잡혀야 2025.12/8이 2012-08로 오인되지 않는다.
+  let m=s.match(/^\s*(\d{4})\s*(?:년|[.\-/])\s*(\d{1,2})\s*(?:월|[.\/-])\s*(\d{1,2})(?:\s*일)?(?=\s|$|[월화수목금토일요일,，:：\-—–])/);
   if(m){
-    const yy=normalizeYear(m[1]), mm=+m[2], dd=+m[3];
-    if(mm>=1&&mm<=12&&dd>=1&&dd<=31){
+    const yy=+m[1], mm=+m[2], dd=+m[3];
+    if(yy>=2000 && yy<=2100 && mm>=1 && mm<=12 && dd>=1 && dd<=31){
       const rest=s.slice(m[0].length).trim();
-      if(!rest || /^[월화수목금토일](?:요일)?(?:\s|$)/.test(rest) || /^(?:-|—|–|,)/.test(rest) || /(일차|기록|요약|로그)/.test(rest)){
+      if(!rest || /^[월화수목금토일](?:요일)?(?:\s|$)/.test(rest) || /^(?:-|—|–|,|，)/.test(rest) || /(일차|기록|요약|로그)/.test(rest)){
         return `${yy}-${pad(mm)}-${pad(dd)}`;
       }
     }
   }
 
+  // 2) 두 자리 연도 포함 날짜: 25.12/8 → 2025-12-08
+  m=s.match(/^\s*(\d{2})\s*(?:년|[.\-/])\s*(\d{1,2})\s*(?:월|[.\/-])\s*(\d{1,2})(?:\s*일)?(?=\s|$|[월화수목금토일요일,，:：\-—–])/);
+  if(m){
+    const yy=normalizeYear(m[1]), mm=+m[2], dd=+m[3];
+    if(mm>=1 && mm<=12 && dd>=1 && dd<=31){
+      const rest=s.slice(m[0].length).trim();
+      if(!rest || /^[월화수목금토일](?:요일)?(?:\s|$)/.test(rest) || /^(?:-|—|–|,|，)/.test(rest) || /(일차|기록|요약|로그)/.test(rest)){
+        return `${yy}-${pad(mm)}-${pad(dd)}`;
+      }
+    }
+  }
+
+  // 3) 연도 없는 날짜 헤더: 기본 연도 선택값 사용.
+  // 12/8 월 132일차, 12월 8일
+  // 12.8은 검사수치와 헷갈려 허용하지 않는다.
   m=s.match(/^\s*(\d{1,2})\s*(?:\/|월\s*)(\d{1,2})(?:\s*일)?/);
   if(m && /(^어제|^오늘|기록|일차|요약|로그|월요일|화요일|수요일|목요일|금요일|토요일|일요일|[월화수목금토일](?:요일)?(?:\s|$))/.test(s)){
     const mm=+m[1], dd=+m[2];
-    if(mm>=1&&mm<=12&&dd>=1&&dd<=31) return `${importBaseYear()}-${pad(mm)}-${pad(dd)}`;
+    if(mm>=1 && mm<=12 && dd>=1 && dd<=31) return `${importBaseYear()}-${pad(mm)}-${pad(dd)}`;
   }
 
   if(/^어제\s*(기록|요약|로그)?$/.test(s)){
@@ -663,6 +700,7 @@ function dateHeader(line){
   if(/^오늘\s*(기록|요약|로그)?$/.test(s)) return localDate();
   return "";
 }
+
 
 
 
@@ -861,23 +899,22 @@ function normalizeCareLogTextForParser(text){
   s=s.replace(/[ \t]+/g," ");
 
   // TXT/메모 export에서 여러 기록이 한 줄로 붙는 경우를 줄 단위로 복구.
-  // 예: "... ㅇ3:50 소변 75g ㅇ4:05 ROM" → 각 시간 기록 앞에 줄바꿈.
   s=s.replace(/([^\n])\s+([ㅇoO○]\s*\d{1,2}\s*[:：]\s*\d{1,2})/g,"$1\n$2");
   s=s.replace(/([^\n])\s+([ㅇoO○]\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?)/g,"$1\n$2");
-
-  // 글머리표 시간 기록도 복구.
   s=s.replace(/([^\n])\s+([\-•*]\s*\d{1,2}\s*[:：]\s*\d{1,2})/g,"$1\n$2");
   s=s.replace(/([^\n])\s+([\-•*]\s*\d{1,2}\s*시(?:\s*\d{1,2}\s*분?)?)/g,"$1\n$2");
 
-  // 날짜 헤더가 앞 문장에 붙는 경우 복구.
-  s=s.replace(/([^\n])\s+((?:20\d{2}|\d{2})\s*[.\-/년]\s*\d{1,2}\s*[.\/월-]\s*\d{1,2}\s*(?:[월화수목금토일]|일|—|-|,|\s))/g,"$1\n$2");
+  // 날짜 헤더 복구. 2025.12/8 같은 4자리 연도 날짜를 가장 먼저 보호한다.
+  s=s.replace(/([^\n])\s+((?:20\d{2})\s*(?:년|[.\-/])\s*\d{1,2}\s*(?:월|[.\/-])\s*\d{1,2}(?:\s*일)?\s*(?:[월화수목금토일]|요일|기록|일차|$))/g,"$1\n$2");
+  s=s.replace(/([^\n])\s+((?:\d{2})\s*(?:년|[.\-/])\s*\d{1,2}\s*(?:월|[.\/-])\s*\d{1,2}(?:\s*일)?\s*(?:[월화수목금토일]|요일|기록|일차|$))/g,"$1\n$2");
   s=s.replace(/([^\n])\s+(\d{1,2}\s*(?:\/|월\s*)\d{1,2}(?:\s*일)?\s*(?:[월화수목금토일]|요일|기록|일차))/g,"$1\n$2");
 
-  // iPhone 메모에서 하위 설명이 " - "로 붙는 경우 줄 분리.
+  // 하위 설명 분리
   s=s.replace(/([^\n])\s+(-\s+)/g,"$1\n$2");
 
   return s.trim();
 }
+
 
 function gptImportRawText(){
   return getImportText("file");
@@ -953,9 +990,25 @@ function parsePasteText(){
 
 
 async function saveRows(rows){
-  if(!roomPath){alert("먼저 입장하세요.");show("join");return}
-  for(const r of rows){const id=recordId(r);await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false})}
+  if(!roomPath){alert("먼저 입장하세요.");show("join");return {saved:0,failed:0};}
+  let saved=0,failed=0;
+  const errors=[];
+  for(const r of rows||[]){
+    try{
+      const id=recordId(r);
+      await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false});
+      saved++;
+    }catch(e){
+      failed++;
+      errors.push(String(e&&e.message||e));
+    }
+  }
+  const stats={saved,failed,total:(rows||[]).length,errors};
+  window._lastSaveStats=stats;
+  if(failed) throw new Error(`저장 ${saved}개 성공 / ${failed}개 실패: ${errors[0]||"원인 미상"}`);
+  return stats;
 }
+
 
 function fillInputFromRecord(r){
   $("dt").value=r.dt||nowInput();
@@ -1372,21 +1425,54 @@ async function uploadMediaFiles(recordId){
   return out;
 }
 function mediaHtml(r){
-  const list=r.media||r.attachments||[];
+  const list=Array.isArray(r&&r.media) ? r.media :
+             (Array.isArray(r&&r.attachments) ? r.attachments : []);
   if(!list.length) return "";
+
   const recId=r.id||r.key||(typeof recordId==="function"?recordId(r):"");
+  const safeRec=safeIdForButton(recId);
+
   const items=list.map((m,idx)=>{
-    const name=escapeHtml(m.name||"첨부파일");
-    const url=m.url||"";
-    const typ=m.type||"";
-    const path=m.path||"";
-    const deleteBtn=`<button class="mediaDelete" onclick="deleteMediaAttachment('${safeIdForButton(recId)}',${idx})">첨부 삭제</button>`;
-    if(/^image\//.test(typ)) return `<div class="mediaThumb"><a href="${url}" target="_blank"><img src="${url}" alt="${name}"></a><div class="mediaLink">${name}</div>${deleteBtn}</div>`;
-    if(/^video\//.test(typ)) return `<div class="mediaThumb"><video controls src="${url}"></video><div class="mediaLink"><a href="${url}" target="_blank">${name} 열기</a></div>${deleteBtn}</div>`;
-    return `<div class="mediaThumb"><div class="mediaLink"><a href="${url}" target="_blank">${name} 열기</a></div>${deleteBtn}</div>`;
+    const name=escapeHtml(m&&m.name||`첨부 ${idx+1}`);
+    const url=String(m&&m.url||"");
+    let type=String(m&&m.type||"").toLowerCase();
+
+    if(!type){
+      const probe=String((m&&m.name)||url);
+      if(/\.(jpg|jpeg|png|gif|webp|heic)(?:$|\?)/i.test(probe)) type="image/unknown";
+      else if(/\.(mp4|mov|m4v|webm)(?:$|\?)/i.test(probe)) type="video/unknown";
+    }
+
+    const del=typeof deleteMediaAttachment==="function"
+      ? `<button class="mediaDelete" onclick="deleteMediaAttachment('${safeRec}',${idx})">첨부 삭제</button>`
+      : "";
+
+    if(/^image\//.test(type)){
+      return `<div class="solMediaItem">
+        <a href="${url}" target="_blank" rel="noopener">
+          <img loading="lazy" src="${url}" alt="${name}">
+        </a>
+        <div class="solMediaName">${name}</div>
+        <div class="solMediaActions"><a href="${url}" target="_blank" rel="noopener">원본 열기</a>${del}</div>
+      </div>`;
+    }
+    if(/^video\//.test(type)){
+      return `<div class="solMediaItem">
+        <video controls playsinline preload="metadata" src="${url}"></video>
+        <div class="solMediaName">${name}</div>
+        <div class="solMediaActions"><a href="${url}" target="_blank" rel="noopener">원본 열기</a>${del}</div>
+      </div>`;
+    }
+    return `<div class="solMediaItem">
+      <div class="note">첨부 형식을 확인하지 못했습니다.</div>
+      <div class="solMediaName">${name}</div>
+      <div class="solMediaActions">${url?`<a href="${url}" target="_blank" rel="noopener">원본 열기</a>`:""}${del}</div>
+    </div>`;
   }).join("");
-  return `<div class="mediaGrid">${items}</div>`;
+
+  return `<div class="solMediaGrid">${items}</div>`;
 }
+
 
 function clearMediaInput(){
   const input=$("mediaFiles");
@@ -1416,6 +1502,7 @@ function render(){
       <h3>${r.dt||""} [${r.type||""}] ${warn}</h3>
       <div class="small">${d}</div>
       <div class="memo">${memo}</div>
+      ${mediaHtml(r)}
       <button onclick="editRecord('${id}')">수정</button>
       <button class="danger" onclick="deleteRecord('${id}')">삭제</button>
     </div>`;
@@ -1940,9 +2027,9 @@ async function saveImportRows(kind){
   if(!confirm(importSummaryMessage(kind,rows,rawText))) return;
   if(kind==="file") setGptInStatus("저장 중...");
   try{
-    await saveRows(rows);
+    const stats=await saveRows(rows);
     const savedSummaries=await savePastedDailySummaries(rows);
-    alert(`저장 완료\n기록 ${rows.length.toLocaleString()}개\n날짜별 요약 ${savedSummaries}일치`);
+    alert(`저장 완료\n요청 ${rows.length.toLocaleString()}개\nFirestore 저장 성공 ${stats.saved.toLocaleString()}개\n실패 ${stats.failed.toLocaleString()}개\n날짜별 요약 ${savedSummaries}일치`);
     if(kind==="file") clearGptIn();
     else { $("pasteLog").value=""; $("pastePreview").textContent=""; }
     show("records");
@@ -2205,7 +2292,48 @@ function selectiveDedupeSelfTest(){
 
 
 
-Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe});
+
+function appHealthCheck(){
+  const tests=[];
+  const add=(name,ok,detail="")=>tests.push({name,ok:!!ok,detail});
+  try{ add("입장 상태",!!roomPath,roomPath||"미입장"); }catch(e){ add("입장 상태",false,String(e)); }
+  try{ add("기록 로드",Array.isArray(allRows),`${(allRows||[]).length}개`); }catch(e){ add("기록 로드",false,String(e)); }
+  try{ add("안전중복 함수",typeof findBulkDuplicates==="function" && typeof structuredDedupeSignature==="function"); }catch(e){ add("안전중복 함수",false,String(e)); }
+  try{ add("TXT 파서",typeof parseTextToRows==="function" && typeof normalizeCareLogTextForParser==="function"); }catch(e){ add("TXT 파서",false,String(e)); }
+  try{ add("사진/영상 미리보기",typeof mediaHtml==="function"); }catch(e){ add("사진/영상 미리보기",false,String(e)); }
+  try{ add("Firebase Storage",typeof storage!=="undefined"); }catch(e){ add("Firebase Storage",false,String(e)); }
+  try{
+    const t=typeof bulkDedupeSelfTest==="function"?bulkDedupeSelfTest():{ok:true};
+    add("중복 자체검사",t.ok!==false);
+  }catch(e){ add("중복 자체검사",false,String(e)); }
+  try{
+    const sample=`2025.12/8 월 132일차\nㅇ10:30 수동적 ROM`;
+    const rows=parseTextToRows(sample);
+    add("2025.12/8 날짜검사",rows.some(r=>(r.dt||"").startsWith("2025-12-08")),rows.map(r=>r.dt).join(", "));
+  }catch(e){ add("2025.12/8 날짜검사",false,String(e)); }
+
+  const okCount=tests.filter(t=>t.ok).length;
+  const text=tests.map(t=>`${t.ok?"✅":"❌"} ${t.name}${t.detail?` — ${t.detail}`:""}`).join("\n");
+  alert(`V43 Sol 앱 자체점검\n${okCount}/${tests.length} 통과\n\n${text}`);
+  return {ok:okCount===tests.length,tests};
+}
+
+function solUpgradeSelfTest(){
+  const media=mediaHtml({id:"x",media:[
+    {name:"a.jpg",type:"image/jpeg",url:"https://example.com/a.jpg"},
+    {name:"b.mp4",type:"video/mp4",url:"https://example.com/b.mp4"}
+  ]});
+  return {
+    ok: typeof saveRows==="function" &&
+        typeof appHealthCheck==="function" &&
+        media.includes("<img") &&
+        media.includes("<video controls playsinline") &&
+        typeof structuredDedupeSignature==="function",
+    mediaOK:media.includes("<img")&&media.includes("<video controls playsinline")
+  };
+}
+
+Object.assign(window,{goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe,appHealthCheck,solUpgradeSelfTest});
 </script>
 </body>
 </html>
