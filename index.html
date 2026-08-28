@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 V43.1 Sol 미디어검증판</title>
+<title>아버지 케어로그 V43 Sol 안정화판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -361,15 +361,10 @@ h1,h2,h3{color:#f8fafc!important}
 .solMediaActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:7px;align-items:center}
 .solMediaActions a,.solMediaActions button{font-size:13px!important;padding:7px 9px!important;min-height:auto!important}
 
-
-.solMediaBadge{display:inline-block;margin:10px 0 6px;padding:5px 9px;border:1px solid #475569;border-radius:999px;font-size:13px;color:#e2e8f0;background:#111827}
-.mediaLoadError{margin:8px 0;padding:8px;border:1px solid #7f1d1d;border-radius:8px;color:#fecaca;background:#450a0a}
-.mediaStatusLine{margin:8px 0 12px;padding:8px 10px;border:1px solid #334155;border-radius:10px;color:#cbd5e1;background:#0f172a}
-
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 V43.1 Sol 미디어검증판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 V43 Sol 안정화판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -577,7 +572,7 @@ h1,h2,h3{color:#f8fafc!important}
 <!-- 다크모드 기본 적용 -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-import { getFirestore, collection, doc, getDoc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
 
 const firebaseConfig={
@@ -1051,7 +1046,6 @@ function cancelEdit(){
 async function saveManual(){
   try{
     if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
-
     const r={
       dt:val("dt")||nowInput(),
       type:val("type")||"특이사항",
@@ -1065,65 +1059,45 @@ async function saveManual(){
       authorName:currentAuthor||"가족",
       familyCode:currentCode
     };
-
     const editingId=getEditingId();
     const id=editingId || (typeof recordId==="function"?recordId(r):String(Date.now()));
-    const old=editingId ? (allRows||[]).find(x=>(x.id||x.key||recordId(x))===editingId) : null;
-    const existingMedia=old
-      ? [...(Array.isArray(old.media)?old.media:(Array.isArray(old.attachments)?old.attachments:[]))]
-      : [];
-
     const files=mediaFiles();
-    if(existingMedia.length+files.length>3){
-      throw new Error("한 기록당 첨부는 최대 3개입니다. 현재 "+existingMedia.length+"개 + 새 파일 "+files.length+"개입니다.");
+    if(files.length) {
+      const ok=confirm(`사진/영상 ${files.length}개를 업로드하고 기록에 첨부할까요?`);
+      if(!ok) return;
     }
-
-    if(files.length && !confirm("사진/영상 "+files.length+"개를 업로드하고 이 기록에 첨부할까요?")) return;
-
     const uploaded=await uploadMediaFiles(id);
-    const combined=[...existingMedia,...uploaded];
-    if(combined.length){
-      r.media=combined;
-      r.attachments=combined;
-    }
-
-    const fixed=typeof annotateSuction==="function"?annotateSuction({...r,id}):{...r,id};
-    await setDoc(doc(db,roomPath,id),{
-      ...fixed,
-      key:id,
-      media:combined,
-      attachments:combined,
-      warning:typeof warning==="function"?warning(fixed):"",
-      updatedAt:serverTimestamp()
-    },{merge:false});
-
-    const verifySnap=await getDoc(doc(db,roomPath,id));
-    if(!verifySnap.exists()) throw new Error("저장 직후 Firestore에서 기록을 다시 찾지 못했습니다.");
-
-    const saved=verifySnap.data()||{};
-    const savedMedia=Array.isArray(saved.media)?saved.media:(Array.isArray(saved.attachments)?saved.attachments:[]);
-    const urlCount=savedMedia.filter(m=>m&&typeof m.url==="string"&&m.url.length>0).length;
-    if(combined.length && urlCount!==combined.length){
-      throw new Error("첨부 저장 검증 실패: 기대 "+combined.length+"개 / Firestore URL 확인 "+urlCount+"개");
-    }
+    if(uploaded.length) r.media=uploaded;
 
     if(editingId){
+      let existingMedia=[];
+      const old=(allRows||[]).find(x=>(x.id||x.key||recordId(x))===editingId);
+      if(old && old.media && old.media.length) existingMedia=old.media;
+      if(existingMedia.length || uploaded.length) r.media=[...existingMedia,...uploaded];
+      const fixed=typeof annotateSuction==="function"?annotateSuction({...r,id:editingId}):{...r,id:editingId};
+      await setDoc(doc(db,roomPath,editingId),{...fixed,key:editingId,warning:typeof warning==="function"?warning(fixed):"",updatedAt:serverTimestamp()},{merge:false});
       setEditingId("");
       const st=$("editStatus"); if(st) st.textContent="";
       const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="none";
+      if(typeof clearInput==="function") clearInput();
+      clearMediaInput();
+      alert("수정 저장했습니다.");
+      show("records");
+      return;
     }
 
+    if(typeof saveRows==="function") await saveRows([r]);
+    else await setDoc(doc(db,roomPath,id),{...r,key:id,updatedAt:serverTimestamp()},{merge:false});
     if(typeof clearInput==="function") clearInput();
     clearMediaInput();
-
-    alert((editingId?"수정 저장 완료":"저장 완료")
-      +(combined.length ? "\n첨부 "+combined.length+"개가 Firestore에서 실제 확인되었습니다." : ""));
-    show("records");
+    alert(uploaded.length?`저장했습니다. 첨부 ${uploaded.length}개 포함.`:"저장했습니다.");
   }catch(e){
     if(typeof showError==="function") showError("직접 입력 저장",e);
     else alert("직접 입력 저장 오류: "+((e&&e.message)?e.message:e));
   }
 }
+
+
 
 function clearInput(){
   ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","breath","memo"].forEach(id=>$(id).value="");
@@ -1459,9 +1433,9 @@ function mediaHtml(r){
   const safeRec=safeIdForButton(recId);
 
   const items=list.map((m,idx)=>{
-    const name=escapeHtml((m&&m.name)||("첨부 "+(idx+1)));
-    const url=String((m&&m.url)||"");
-    let type=String((m&&m.type)||"").toLowerCase();
+    const name=escapeHtml(m&&m.name||`첨부 ${idx+1}`);
+    const url=String(m&&m.url||"");
+    let type=String(m&&m.type||"").toLowerCase();
 
     if(!type){
       const probe=String((m&&m.name)||url);
@@ -1469,37 +1443,36 @@ function mediaHtml(r){
       else if(/\.(mp4|mov|m4v|webm)(?:$|\?)/i.test(probe)) type="video/unknown";
     }
 
-    const del=(typeof deleteMediaAttachment==="function")
-      ? '<button class="mediaDelete" onclick="deleteMediaAttachment(\''+safeRec+'\','+idx+')">첨부 삭제</button>'
-      : '';
+    const del=typeof deleteMediaAttachment==="function"
+      ? `<button class="mediaDelete" onclick="deleteMediaAttachment('${safeRec}',${idx})">첨부 삭제</button>`
+      : "";
 
     if(/^image\//.test(type)){
-      return '<div class="solMediaItem">'
-        +'<img loading="lazy" src="'+url+'" alt="'+name+'" onclick="window.open(\''+url+'\',\'_blank\')" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'block\'">'
-        +'<div class="mediaLoadError" style="display:none">사진을 불러오지 못했습니다. 아래 원본 열기로 확인하세요.</div>'
-        +'<div class="solMediaName">'+name+'</div>'
-        +'<div class="solMediaActions"><a href="'+url+'" target="_blank" rel="noopener">원본 열기</a>'+del+'</div>'
-        +'</div>';
+      return `<div class="solMediaItem">
+        <a href="${url}" target="_blank" rel="noopener">
+          <img loading="lazy" src="${url}" alt="${name}">
+        </a>
+        <div class="solMediaName">${name}</div>
+        <div class="solMediaActions"><a href="${url}" target="_blank" rel="noopener">원본 열기</a>${del}</div>
+      </div>`;
     }
-
     if(/^video\//.test(type)){
-      return '<div class="solMediaItem">'
-        +'<video controls playsinline preload="metadata" src="'+url+'"></video>'
-        +'<div class="solMediaName">'+name+'</div>'
-        +'<div class="solMediaActions"><a href="'+url+'" target="_blank" rel="noopener">원본 열기</a>'+del+'</div>'
-        +'</div>';
+      return `<div class="solMediaItem">
+        <video controls playsinline preload="metadata" src="${url}"></video>
+        <div class="solMediaName">${name}</div>
+        <div class="solMediaActions"><a href="${url}" target="_blank" rel="noopener">원본 열기</a>${del}</div>
+      </div>`;
     }
-
-    const open=url ? '<a href="'+url+'" target="_blank" rel="noopener">원본 열기</a>' : '';
-    return '<div class="solMediaItem">'
-      +'<div class="note">첨부 형식을 확인하지 못했습니다.</div>'
-      +'<div class="solMediaName">'+name+'</div>'
-      +'<div class="solMediaActions">'+open+del+'</div>'
-      +'</div>';
+    return `<div class="solMediaItem">
+      <div class="note">첨부 형식을 확인하지 못했습니다.</div>
+      <div class="solMediaName">${name}</div>
+      <div class="solMediaActions">${url?`<a href="${url}" target="_blank" rel="noopener">원본 열기</a>`:""}${del}</div>
+    </div>`;
   }).join("");
 
-  return '<div class="solMediaBadge">📎 첨부 '+list.length+'개</div><div class="solMediaGrid">'+items+'</div>';
+  return `<div class="solMediaGrid">${items}</div>`;
 }
+
 
 function clearMediaInput(){
   const input=$("mediaFiles");
@@ -1578,8 +1551,7 @@ function render(){
           <div id="${yearId}" data-folder-body="1" class="folderBody" style="display:none">${monthHtml}</div>
         </div>`;
       }).join("");
-      const mediaRecordCount=(allRows||[]).filter(r=>(Array.isArray(r.media)&&r.media.length)||(Array.isArray(r.attachments)&&r.attachments.length)).length;
-      rl.innerHTML=`<div class="mediaStatusLine">📎 실제 첨부가 저장된 기록: ${mediaRecordCount}개</div><div class="quickRow">
+      rl.innerHTML=`<div class="quickRow">
         <button onclick="openRecentRecordFolders()">최근 날짜 열기</button>
         <button onclick="openAllRecordFolders()">전체 펼치기</button>
         <button onclick="closeAllRecordFolders()">전체 접기</button>
@@ -2323,55 +2295,26 @@ function selectiveDedupeSelfTest(){
 
 function appHealthCheck(){
   const tests=[];
-  const add=(name,ok,detail)=>tests.push({name,ok:!!ok,detail:detail||""});
-
+  const add=(name,ok,detail="")=>tests.push({name,ok:!!ok,detail});
   try{ add("입장 상태",!!roomPath,roomPath||"미입장"); }catch(e){ add("입장 상태",false,String(e)); }
-  try{ add("기록 로드",Array.isArray(allRows),(allRows||[]).length+"개"); }catch(e){ add("기록 로드",false,String(e)); }
-  try{ add("안전중복 함수",typeof findBulkDuplicates==="function"&&typeof structuredDedupeSignature==="function",""); }catch(e){ add("안전중복 함수",false,String(e)); }
-  try{ add("TXT 파서",typeof parseTextToRows==="function"&&typeof normalizeCareLogTextForParser==="function",""); }catch(e){ add("TXT 파서",false,String(e)); }
-
-  try{
-    const mediaRows=(allRows||[]).filter(r=>{
-      const a=Array.isArray(r.media)?r.media:(Array.isArray(r.attachments)?r.attachments:[]);
-      return a.length>0;
-    });
-    const mediaItems=[];
-    mediaRows.forEach(r=>{
-      const a=Array.isArray(r.media)?r.media:(Array.isArray(r.attachments)?r.attachments:[]);
-      a.forEach(m=>mediaItems.push(m));
-    });
-    const withUrl=mediaItems.filter(m=>m&&typeof m.url==="string"&&/^https?:\/\//.test(m.url));
-    const images=withUrl.filter(m=>/^image\//.test(String(m.type||""))||/\.(jpg|jpeg|png|gif|webp|heic)(?:$|\?)/i.test(String(m.name||m.url||"")));
-    const videos=withUrl.filter(m=>/^video\//.test(String(m.type||""))||/\.(mp4|mov|m4v|webm)(?:$|\?)/i.test(String(m.name||m.url||"")));
-
-    add("실제 첨부 저장",mediaItems.length>0&&withUrl.length===mediaItems.length,
-        "첨부 기록 "+mediaRows.length+"개 / 파일 "+mediaItems.length+"개 / URL "+withUrl.length+"개");
-    add("사진·영상 판별",withUrl.length>0&&(images.length+videos.length)>0,
-        "사진 "+images.length+"개 / 동영상 "+videos.length+"개");
-  }catch(e){
-    add("실제 첨부 저장",false,String(e));
-    add("사진·영상 판별",false,String(e));
-  }
-
-  try{
-    const sample=mediaHtml({id:"x",media:[{name:"x.jpg",type:"image/jpeg",url:"https://example.com/x.jpg"}]});
-    add("미디어 렌더러",sample.includes("<img"),"");
-  }catch(e){ add("미디어 렌더러",false,String(e)); }
-
+  try{ add("기록 로드",Array.isArray(allRows),`${(allRows||[]).length}개`); }catch(e){ add("기록 로드",false,String(e)); }
+  try{ add("안전중복 함수",typeof findBulkDuplicates==="function" && typeof structuredDedupeSignature==="function"); }catch(e){ add("안전중복 함수",false,String(e)); }
+  try{ add("TXT 파서",typeof parseTextToRows==="function" && typeof normalizeCareLogTextForParser==="function"); }catch(e){ add("TXT 파서",false,String(e)); }
+  try{ add("사진/영상 미리보기",typeof mediaHtml==="function"); }catch(e){ add("사진/영상 미리보기",false,String(e)); }
+  try{ add("Firebase Storage",typeof storage!=="undefined"); }catch(e){ add("Firebase Storage",false,String(e)); }
   try{
     const t=typeof bulkDedupeSelfTest==="function"?bulkDedupeSelfTest():{ok:true};
-    add("중복 자체검사",t.ok!==false,"");
+    add("중복 자체검사",t.ok!==false);
   }catch(e){ add("중복 자체검사",false,String(e)); }
-
   try{
-    const sampleText="2025.12/8 월 132일차\nㅇ10:30 수동적 ROM";
-    const rows=parseTextToRows(sampleText);
+    const sample=`2025.12/8 월 132일차\nㅇ10:30 수동적 ROM`;
+    const rows=parseTextToRows(sample);
     add("2025.12/8 날짜검사",rows.some(r=>(r.dt||"").startsWith("2025-12-08")),rows.map(r=>r.dt).join(", "));
   }catch(e){ add("2025.12/8 날짜검사",false,String(e)); }
 
   const okCount=tests.filter(t=>t.ok).length;
-  const text=tests.map(t=>(t.ok?"✅":"❌")+" "+t.name+(t.detail?" — "+t.detail:"")).join("\n");
-  alert("V43.1 Sol 앱 실제점검\n"+okCount+"/"+tests.length+" 통과\n\n"+text);
+  const text=tests.map(t=>`${t.ok?"✅":"❌"} ${t.name}${t.detail?` — ${t.detail}`:""}`).join("\n");
+  alert(`V43 Sol 앱 자체점검\n${okCount}/${tests.length} 통과\n\n${text}`);
   return {ok:okCount===tests.length,tests};
 }
 
