@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 V43 Sol 안정화판</title>
+<title>아버지 케어로그 V43.2 Sol 단일상태판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -352,7 +352,7 @@ h1,h2,h3{color:#f8fafc!important}
 .dupMeta{color:#cbd5e1;font-size:13px}
 .dupActions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 
-/* V43 Sol 안정화판 */
+/* V43.2 Sol 단일상태판 */
 .solMediaGrid{display:grid;grid-template-columns:1fr;gap:12px;margin:12px 0 14px;width:100%}
 .solMediaItem{width:100%;border:1px solid #334155;background:#0b1220;border-radius:14px;padding:10px;overflow:hidden}
 .solMediaItem img{display:block;width:100%;max-height:440px;object-fit:contain;border-radius:10px;background:#020617}
@@ -364,7 +364,7 @@ h1,h2,h3{color:#f8fafc!important}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 V43 Sol 안정화판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 V43.2 Sol 단일상태판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -588,7 +588,11 @@ const app=initializeApp(firebaseConfig);
 const storage=getStorage(app);
 const db=getFirestore(app);
 
-let currentCode="", currentAuthor="", roomPath="", allRows=[], unsub=null, editingId="", renderQueued=false;
+// V43.2 상태 원칙: Firestore에서 받은 기록 원본은 allRows 하나만 보관한다.
+// 화면용 today/group/duplicate 결과는 저장하지 않고 allRows에서 필요할 때 계산한다.
+// roomPath는 currentCode의 파생값이므로 별도 state로 보관하지 않는다.
+let currentCode="", currentAuthor="", allRows=[], unsub=null, renderQueued=false;
+function recordsPath(){ return currentCode ? `families/${currentCode}/records` : ""; }
 
 const $=id=>document.getElementById(id);
 const val=id=>($(id)?.value||"").trim();
@@ -990,13 +994,13 @@ function parsePasteText(){
 
 
 async function saveRows(rows){
-  if(!roomPath){alert("먼저 입장하세요.");show("join");return {saved:0,failed:0};}
+  if(!currentCode){alert("먼저 입장하세요.");show("join");return {saved:0,failed:0};}
   let saved=0,failed=0;
   const errors=[];
   for(const r of rows||[]){
     try{
       const id=recordId(r);
-      await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false});
+      await setDoc(doc(db,recordsPath(),id),{...r,key:id},{merge:false});
       saved++;
     }catch(e){
       failed++;
@@ -1045,7 +1049,7 @@ function cancelEdit(){
 
 async function saveManual(){
   try{
-    if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
+    if(!currentCode){alert("먼저 입장하세요.");show("join");return;}
     const r={
       dt:val("dt")||nowInput(),
       type:val("type")||"특이사항",
@@ -1075,7 +1079,7 @@ async function saveManual(){
       if(old && old.media && old.media.length) existingMedia=old.media;
       if(existingMedia.length || uploaded.length) r.media=[...existingMedia,...uploaded];
       const fixed=typeof annotateSuction==="function"?annotateSuction({...r,id:editingId}):{...r,id:editingId};
-      await setDoc(doc(db,roomPath,editingId),{...fixed,key:editingId,warning:typeof warning==="function"?warning(fixed):"",updatedAt:serverTimestamp()},{merge:false});
+      await setDoc(doc(db,recordsPath(),editingId),{...fixed,key:editingId,warning:typeof warning==="function"?warning(fixed):"",updatedAt:serverTimestamp()},{merge:false});
       setEditingId("");
       const st=$("editStatus"); if(st) st.textContent="";
       const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="none";
@@ -1087,7 +1091,7 @@ async function saveManual(){
     }
 
     if(typeof saveRows==="function") await saveRows([r]);
-    else await setDoc(doc(db,roomPath,id),{...r,key:id,updatedAt:serverTimestamp()},{merge:false});
+    else await setDoc(doc(db,recordsPath(),id),{...r,key:id,updatedAt:serverTimestamp()},{merge:false});
     if(typeof clearInput==="function") clearInput();
     clearMediaInput();
     alert(uploaded.length?`저장했습니다. 첨부 ${uploaded.length}개 포함.`:"저장했습니다.");
@@ -1325,9 +1329,9 @@ async function savePaste(){
 
 
 function joinFamily(){
-  currentAuthor=val("authorName")||"가족"; currentCode=val("familyCode")||"3434"; roomPath=`families/${currentCode}/records`;
+  currentAuthor=val("authorName")||"가족"; currentCode=val("familyCode")||"3434";
   if(unsub)unsub();
-  unsub=onSnapshot(collection(db,roomPath),snap=>{allRows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.dt||"").localeCompare(b.dt||""));scheduleRender();});
+  unsub=onSnapshot(collection(db,recordsPath()),snap=>{allRows=snap.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.dt||"").localeCompare(b.dt||""));scheduleRender();});
   $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor}`;
   show("input");
 }
@@ -1568,7 +1572,7 @@ function render(){
 
 function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
-async function deleteRecord(id){const r=allRows.find(x=>x.id===id);const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";if(!confirm(`이 기록을 삭제할까요?\n\n${label}`))return;await deleteDoc(doc(db,roomPath,id))}
+async function deleteRecord(id){const r=allRows.find(x=>x.id===id);const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";if(!confirm(`이 기록을 삭제할까요?\n\n${label}`))return;await deleteDoc(doc(db,recordsPath(),id))}
 async function copyTodaySummary(){await navigator.clipboard.writeText(summaryObj(localDate(),todayRows()).요약);alert("복사했습니다.")}
 
 function csvEsc(v){const s=String(v??"");return /[",\n\r]/.test(s)?`"${s.replace(/"/g,'""')}"`:s}
@@ -1581,12 +1585,12 @@ function csvNum(v){const s=String(v??"").trim();if(!s)return null;const n=Number
 function csvRecord(o){return {dt:o["날짜시간"]||"",type:o["기록종류"]||"특이사항",spo2:csvNum(o["SpO2"]),hr:csvNum(o["HR"]),temp:csvNum(o["체온"]),oxygen:csvNum(o["산소"]),weight:csvNum(o["체중"]),sbp:csvNum(o["혈압수축"]),dbp:csvNum(o["혈압이완"]),feed:csvNum(o["식사"]),water:csvNum(o["물"]),residual:csvNum(o["잔류"]),urine:csvNum(o["소변"]),stool:csvNum(o["대변"]),hob:csvNum(o["HOB"]),position:o["체위"]||"",positionDetail:o["체위상세"]||"",breath:o["호흡"]||"",memo:stripKey(o["메모"]||""),authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()}}
 async function readCsvFile(){const f=$("csvFile").files[0];if(!f)throw new Error("CSV 파일을 선택하세요.");return await f.text()}
 async function applyCsv(deleteMissing){
-  if(!roomPath){alert("먼저 입장하세요.");return}
+  if(!currentCode){alert("먼저 입장하세요.");return}
   let text;try{text=await readCsvFile()}catch(e){alert(e.message);return}
   const rows=parseCsv(text), heads=rows[0].map(h=>String(h).replace(/^\ufeff/,"").trim()), data=rows.slice(1).map(r=>{const o={};heads.forEach((h,i)=>o[h]=r[i]??"");return o});
   const ids=new Set(); if(!confirm(`${data.length}개 반영${deleteMissing?" 및 삭제 동기화":""}할까요?`))return;
-  for(const o of data){const r=csvRecord(o),id=(o.id||o.ID||"").trim()||recordId(r);ids.add(id);await setDoc(doc(db,roomPath,id),{...r,key:id},{merge:false})}
-  if(deleteMissing){for(const r of allRows){const id=r.id||recordId(r);if(!ids.has(id))await deleteDoc(doc(db,roomPath,id))}}
+  for(const o of data){const r=csvRecord(o),id=(o.id||o.ID||"").trim()||recordId(r);ids.add(id);await setDoc(doc(db,recordsPath(),id),{...r,key:id},{merge:false})}
+  if(deleteMissing){for(const r of allRows){const id=r.id||recordId(r);if(!ids.has(id))await deleteDoc(doc(db,recordsPath(),id))}}
   $("csvFile").value=""; alert("완료했습니다.");
 }
 function summaryCsv(rows){const h=["날짜","기록수","식사","물","소변","대변","네뷸","토닥이","석션","구강청소","수동적ROM","체중","요약"];return "\ufeff"+[h,...rows.map(o=>h.map(k=>o[k]??""))].map(r=>r.map(csvEsc).join(",")).join("\n")}
@@ -1595,7 +1599,7 @@ function downloadDailySummaryCsv(){const rows=byDate();if(!rows.length){alert("�
 function downloadTodaySummaryCsv(){download(`아버지_케어로그_오늘요약_${localDate()}.csv`,summaryCsv([summaryObj(localDate(),todayRows())]))}
 async function saveTodaySummaryByDate(){const d=localDate();await setDoc(doc(db,`families/${currentCode}/dailySummaries`,d),{...summaryObj(d,todayRows()),updatedAt:serverTimestamp()},{merge:false});alert("저장했습니다.")}
 async function saveAllDailySummaries(){for(const o of byDate())await setDoc(doc(db,`families/${currentCode}/dailySummaries`,o.날짜),{...o,updatedAt:serverTimestamp()},{merge:false});alert("저장했습니다.")}
-async function collapseSameTimeMeals(){const groups={};for(const r of allRows){if(isMeal(r))(groups[recordId(r)]||=[]).push(r)};let del=0;for(const [id,arr] of Object.entries(groups)){if(arr.length>1){const keep=arr[arr.length-1];await setDoc(doc(db,roomPath,id),{...keep,key:id},{merge:false});for(const r of arr){if(r.id&&r.id!==id){await deleteDoc(doc(db,roomPath,r.id));del++}}}}alert(`정리 완료: ${del}개 삭제`)}
+async function collapseSameTimeMeals(){const groups={};for(const r of allRows){if(isMeal(r))(groups[recordId(r)]||=[]).push(r)};let del=0;for(const [id,arr] of Object.entries(groups)){if(arr.length>1){const keep=arr[arr.length-1];await setDoc(doc(db,recordsPath(),id),{...keep,key:id},{merge:false});for(const r of arr){if(r.id&&r.id!==id){await deleteDoc(doc(db,recordsPath(),r.id));del++}}}}alert(`정리 완료: ${del}개 삭제`)}
 
 
 
@@ -1941,7 +1945,7 @@ function linkTabYearSelfTest(){
 }
 async function deleteMediaAttachment(recordSafeId,idx){
   try{
-    if(!roomPath){alert("먼저 입장하세요.");return;}
+    if(!currentCode){alert("먼저 입장하세요.");return;}
     const rec=(allRows||[]).find(r=>safeIdForButton(r.id||r.key||(typeof recordId==="function"?recordId(r):""))===recordSafeId);
     if(!rec){alert("기록을 찾지 못했습니다.");return;}
     const id=rec.id||rec.key||(typeof recordId==="function"?recordId(rec):"");
@@ -1962,7 +1966,7 @@ async function deleteMediaAttachment(recordSafeId,idx){
       }
     }
     list.splice(idx,1);
-    await setDoc(doc(db,roomPath,id),{...rec,media:list,attachments:list,key:id,updatedAt:serverTimestamp()},{merge:false});
+    await setDoc(doc(db,recordsPath(),id),{...rec,media:list,attachments:list,key:id,updatedAt:serverTimestamp()},{merge:false});
     alert(storageDeleted?"첨부파일을 삭제했습니다.":"기록에서 첨부 링크를 제거했습니다. Storage 파일은 권한 문제로 남아 있을 수 있습니다.");
   }catch(e){
     if(typeof showError==="function") showError("첨부 삭제",e);
@@ -2136,9 +2140,9 @@ function bulkDuplicateRuleText(){
 
 
 
-function findBulkDuplicates(){
+function findBulkDuplicates(sourceRows=allRows){
   const map=new Map(), duplicates=[];
-  const rows=(allRows||[]).slice().sort((a,b)=>(a.dt||"").localeCompare(b.dt||"")||String(a.id||a.key||"").localeCompare(String(b.id||b.key||"")));
+  const rows=(sourceRows||[]).slice().sort((a,b)=>(a.dt||"").localeCompare(b.dt||"")||String(a.id||a.key||"").localeCompare(String(b.id||b.key||"")));
   for(const r of rows){
     const k=bulkDuplicateKey(r);
     if(!k || k==="||") continue;
@@ -2160,7 +2164,7 @@ async function checkBulkDuplicates(){
 
 async function removeBulkDuplicates(){
   try{
-    if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
+    if(!currentCode){alert("먼저 입장하세요.");show("join");return;}
     const r=findBulkDuplicates();
     if(!r.duplicates.length){alert("중복 기록이 없습니다.");return;}
     if(!confirm(`중복 기록 ${r.duplicates.length}개를 삭제할까요?\n\n기준: 같은 날짜 + 정규화한 내용\n각 중복 묶음에서 먼저 저장된 1개는 남기고 나머지만 삭제합니다.\n\n삭제 전 백업 CSV를 받아두는 것을 권장합니다.\n\n${duplicatePreviewText(r.duplicates,20)}`)) return;
@@ -2169,7 +2173,7 @@ async function removeBulkDuplicates(){
       const rr=x.remove;
       const id=rr.id||rr.key||(typeof recordId==="function"?recordId(rr):"");
       if(!id){failed++; continue;}
-      try{await deleteDoc(doc(db,roomPath,id)); deleted++;}
+      try{await deleteDoc(doc(db,recordsPath(),id)); deleted++;}
       catch(e){failed++;}
     }
     alert(`중복 정리 완료\n삭제 ${deleted}개${failed?`\n실패 ${failed}개`:""}`);
@@ -2187,8 +2191,7 @@ function bulkDedupeSelfTest(){
     {dt:"2025-09-29T11:51",type:"석션",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리: 석션]",id:"a"},
     {dt:"2025-09-29T16:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리 : 석션]",id:"b"}
   ];
-  const old=allRows; allRows=sample;
-  const r=findBulkDuplicates(); allRows=old;
+  const r=findBulkDuplicates(sample);
   return {ok:r.duplicates.length===1 && r.duplicates[0].remove.id==="b", rule:bulkDuplicateRuleText(), result:r};
 }
 
@@ -2197,8 +2200,8 @@ function bulkDedupeSelfTest(){
 
 
 
-function groupedBulkDuplicates(){
-  const result=findBulkDuplicates();
+function groupedBulkDuplicates(sourceRows=allRows){
+  const result=findBulkDuplicates(sourceRows);
   const groups=new Map();
   for(const item of result.duplicates){
     if(!groups.has(item.key)) groups.set(item.key,{key:item.key,keep:item.keep,removes:[]});
@@ -2254,7 +2257,7 @@ function selectedDuplicateIds(){
 }
 async function deleteSelectedBulkDuplicates(){
   try{
-    if(!roomPath){alert("먼저 입장하세요.");show("join");return;}
+    if(!currentCode){alert("먼저 입장하세요.");show("join");return;}
     const ids=selectedDuplicateIds();
     if(!ids.length){alert("선택된 중복기록이 없습니다.");return;}
     if(!confirm(`선택한 중복기록 ${ids.length}개를 삭제할까요?\n\n체크한 항목만 삭제되고, 체크 해제한 항목은 남습니다.\n삭제 전 CSV 백업을 권장합니다.`)) return;
@@ -2263,7 +2266,7 @@ async function deleteSelectedBulkDuplicates(){
       const rec=(allRows||[]).find(r=>safeIdForButton(recordDisplayId(r))===safeId);
       const id=rec?recordDisplayId(rec):"";
       if(!id){failed++;continue;}
-      try{await deleteDoc(doc(db,roomPath,id));deleted++;}
+      try{await deleteDoc(doc(db,recordsPath(),id));deleted++;}
       catch(e){failed++;}
     }
     alert(`선택 중복기록 삭제 완료\n삭제 ${deleted}개${failed?`\n실패 ${failed}개`:""}`);
@@ -2283,8 +2286,7 @@ function selectiveDedupeSelfTest(){
     {dt:"2025-09-29T16:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리 : 석션]",id:"b"},
     {dt:"2025-09-29T17:00",type:"호흡/처치",memo:"그르렁 있음 피딩시간이 늦어지자 네뷸 가습 토닥이 가래제거 석션 이 어긋나 아버지가 그르렁 가래소리가 났음 [자동분리: 네뷸]",id:"c"}
   ];
-  const old=allRows; allRows=sample;
-  const r=groupedBulkDuplicates(); allRows=old;
+  const r=groupedBulkDuplicates(sample);
   return {ok:r.groups.length===1 && r.duplicateCount===1 && r.groups[0].removes[0].id==="b", rule:bulkDuplicateRuleText(), result:r};
 }
 
@@ -2296,8 +2298,14 @@ function selectiveDedupeSelfTest(){
 function appHealthCheck(){
   const tests=[];
   const add=(name,ok,detail="")=>tests.push({name,ok:!!ok,detail});
-  try{ add("입장 상태",!!roomPath,roomPath||"미입장"); }catch(e){ add("입장 상태",false,String(e)); }
+  try{ add("입장 상태",!!currentCode,recordsPath()||"미입장"); }catch(e){ add("입장 상태",false,String(e)); }
   try{ add("기록 로드",Array.isArray(allRows),`${(allRows||[]).length}개`); }catch(e){ add("기록 로드",false,String(e)); }
+  try{
+    const stateOk = typeof recordsPath==="function"
+      && !Object.prototype.hasOwnProperty.call(globalThis,"roomPath")
+      && typeof findBulkDuplicates==="function";
+    add("단일 상태 구조",stateOk,`기록 원본 allRows 1개 / 경로는 currentCode에서 계산`);
+  }catch(e){ add("단일 상태 구조",false,String(e)); }
   try{ add("안전중복 함수",typeof findBulkDuplicates==="function" && typeof structuredDedupeSignature==="function"); }catch(e){ add("안전중복 함수",false,String(e)); }
   try{ add("TXT 파서",typeof parseTextToRows==="function" && typeof normalizeCareLogTextForParser==="function"); }catch(e){ add("TXT 파서",false,String(e)); }
   try{ add("사진/영상 미리보기",typeof mediaHtml==="function"); }catch(e){ add("사진/영상 미리보기",false,String(e)); }
