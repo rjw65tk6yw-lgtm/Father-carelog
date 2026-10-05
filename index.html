@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 V43.2 Sol 단일상태판</title>
+<title>아버지 케어로그 V44 공통로직판</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -352,7 +352,7 @@ h1,h2,h3{color:#f8fafc!important}
 .dupMeta{color:#cbd5e1;font-size:13px}
 .dupActions{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
 
-/* V43.2 Sol 단일상태판 */
+/* V44 공통로직판 */
 .solMediaGrid{display:grid;grid-template-columns:1fr;gap:12px;margin:12px 0 14px;width:100%}
 .solMediaItem{width:100%;border:1px solid #334155;background:#0b1220;border-radius:14px;padding:10px;overflow:hidden}
 .solMediaItem img{display:block;width:100%;max-height:440px;object-fit:contain;border-radius:10px;background:#020617}
@@ -364,7 +364,7 @@ h1,h2,h3{color:#f8fafc!important}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 V43.2 Sol 단일상태판</h1><div id="roomStatus" class="small">입장 전</div></header>
+<header><h1>아버지 케어로그 V44 공통로직판</h1><div id="roomStatus" class="small">입장 전</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -498,7 +498,7 @@ h1,h2,h3{color:#f8fafc!important}
 
 
 <div class="advancedBox">
-  <h3>V43 Sol 앱 자체점검</h3>
+  <h3>V44 앱 자체점검</h3>
   <div class="note">입장 상태, 기록 로드, 안전중복, TXT 파서, 사진·동영상 미리보기, Storage, 날짜 파서를 한 번에 점검합니다.</div>
   <button onclick="appHealthCheck()">앱 자체점검 실행</button>
 </div>
@@ -588,7 +588,7 @@ const app=initializeApp(firebaseConfig);
 const storage=getStorage(app);
 const db=getFirestore(app);
 
-// V43.2 상태 원칙: Firestore에서 받은 기록 원본은 allRows 하나만 보관한다.
+// V44 상태 원칙: Firestore에서 받은 기록 원본은 allRows 하나만 보관한다.
 // 화면용 today/group/duplicate 결과는 저장하지 않고 allRows에서 필요할 때 계산한다.
 // roomPath는 currentCode의 파생값이므로 별도 state로 보관하지 않는다.
 let currentCode="", currentAuthor="", allRows=[], unsub=null, renderQueued=false;
@@ -598,8 +598,48 @@ const $=id=>document.getElementById(id);
 const val=id=>($(id)?.value||"").trim();
 const num=id=>val(id)===""?null:Number(val(id));
 const pad=n=>String(n).padStart(2,"0");
-const localDate=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
-const nowInput=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
+// 기록의 dt는 한국에서 입력한 벽시계 시간이다. UTC 변환 없이 같은 날짜를 쓴다.
+function getLogTimeInfo(log){
+  const raw=String(typeof log==="string"?log:(log?.dt??log?.timestamp??""));
+  const m=raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?$/);
+  const empty={dateKey:"",year:"",month:"",time:"",minuteKey:"",hour:null,period:null,periodDateKey:""};
+  if(!m)return empty;
+  const [,y,mo,day,hh,mm]=m, year=+y, month=+mo, date=+day;
+  const leap=year%4===0&&(year%100!==0||year%400===0);
+  const days=[31,leap?29:28,31,30,31,30,31,31,30,31,30,31];
+  if(month<1||month>12||date<1||date>days[month-1]||(hh!==undefined&&(+hh>23||+mm>59)))return empty;
+  const dateKey=`${y}-${mo}-${day}`, hour=hh===undefined?null:+hh;
+  const time=hh===undefined?"":`${hh}:${mm}`;
+  const period=hour===null?null:hour<6?"night":hour<13?"morning":hour<19?"afternoon":"night";
+  // 야간 집계일은 전날 19:00~당일 05:59. 화면의 날짜는 dateKey 그대로 유지한다.
+  const periodDateKey=hour!==null&&hour>=19?shiftDateKey(dateKey,1):dateKey;
+  return {dateKey,year:y,month:mo,time,minuteKey:time?`${dateKey}T${time}`:dateKey,hour,period,periodDateKey};
+}
+function shiftDateKey(dateKey,days){
+  const d=new Date(`${dateKey}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate()+days);
+  return d.toISOString().slice(0,10);
+}
+function localTimeValue(d=new Date()){
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+const localDate=()=>getLogTimeInfo(localTimeValue()).dateKey;
+const nowInput=()=>localTimeValue();
+
+// 판정 순서와 표시·집계용 속성을 같은 설정표에서 참조한다.
+const LOG_TYPES=Object.freeze({
+  "네뷸":{action:true,summary:"네뷸",unit:"회",match:/네뷸|nebul/i},
+  "토닥이":{action:true,summary:"토닥이",unit:"회",match:/토닥|vest|커프/i},
+  "석션":{action:true,summary:"석션",unit:"회",match:/석션|suction/i},
+  "구강청소":{action:true,summary:"구강청소",unit:"회",match:/구강\s*청소|입안\s*청소|oral|mouth/i},
+  "수동적 ROM":{action:true,summary:"수동적ROM",unit:"회",match:/ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i},
+  "식사/수분":{meal:true}, "대소변":{}, "활력징후":{}, "체위변경":{}, "구토":{}, "특이사항":{}
+});
+const TOTAL_FIELDS=Object.freeze({feed:{summary:"식사",unit:"mL"},water:{summary:"물",unit:"mL"},urine:{summary:"소변",unit:"g"},stool:{summary:"대변",unit:"g"}});
+function getLogType(log){return Object.hasOwn(LOG_TYPES,log?.type)?LOG_TYPES[log.type]:null;}
+function hasValue(v){return v!==null&&v!==undefined&&v!=="";}
+function compareRecords(a,b){return String(a.dt||"").localeCompare(String(b.dt||""));}
+
 $("dt").value=nowInput();
 setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if($("gptEnd")) $("gptEnd").value=d;},0);
 
@@ -748,11 +788,8 @@ function isActualOutputLine(s){
 }
 
 function inferType(s){
-  if(/네뷸|nebul/i.test(s))return "네뷸";
-  if(/토닥|vest|커프/i.test(s))return "토닥이";
-  if(/석션|suction/i.test(s))return "석션";
-  if(/구강\s*청소|입안\s*청소|oral|mouth/i.test(s))return "구강청소";
-  if(/ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(s))return "수동적 ROM";
+  const action=actionTypes(s)[0];
+  if(action)return action;
   if(/투석|UF|투석실/.test(s))return "특이사항";
   if(isActualMealLine(s)||isActualWaterLine(s))return "식사/수분";
   if(isActualOutputLine(s))return "대소변";
@@ -761,16 +798,10 @@ function inferType(s){
   if(/구토/.test(s))return "구토";
   return "특이사항";
 }
-
 function actionTypes(s){
-  const a=[];
-  if(/네뷸|nebul/i.test(s))a.push("네뷸");
-  if(/토닥|vest|커프/i.test(s))a.push("토닥이");
-  if(/석션|suction/i.test(s))a.push("석션");
-  if(/구강\s*청소|입안\s*청소|oral|mouth/i.test(s))a.push("구강청소");
-  if(/ROM|관절운동|수동운동|팔\s*운동|다리\s*운동|허리\s*운동/i.test(s))a.push("수동적 ROM");
-  return [...new Set(a)];
+  return Object.entries(LOG_TYPES).filter(([,meta])=>meta.action&&meta.match.test(s)).map(([type])=>type);
 }
+
 function breathStatus(s){
   const neg=/없음|없다|없고|아직\s*없|없다고|아니오|아님|이상\s*없|특이\s*없/.test(s);
   if(/그르렁|가래\s*소리|가래소리/.test(s))return neg?"그르렁 없음":"그르렁 있음";
@@ -874,13 +905,13 @@ function expandRecord(r){
   if(acts.length>=2)return acts.map(t=>annotateSuction({...r,type:t,memo:`${r.memo}\n[자동분리: ${t}]`}));
   return [annotateSuction(r)];
 }
-function isMeal(r){return r.type==="식사/수분"||r.feed!==null||r.water!==null||/(식사|경관식|피딩|뉴케어|물|수분)/.test(r.memo||"")}
+function isMeal(r){return !!getLogType(r)?.meal||hasValue(r.feed)||hasValue(r.water)||/(식사|경관식|피딩|뉴케어|물|수분)/.test(r.memo||"")}
 function recordId(r){
-  const dt=(r.dt||"").slice(0,16);
+  const dt=getLogTimeInfo(r).minuteKey;
   if(isMeal(r))return `meal_${dt}`;
-  if(["네뷸","토닥이","석션","구강청소","수동적 ROM"].includes(r.type))return `act_${dt}_${r.type}`;
-  if(r.urine!==null)return `urine_${dt}_${r.urine}`;
-  if(r.stool!==null)return `stool_${dt}_${r.stool}`;
+  if(getLogType(r)?.action)return `act_${dt}_${r.type}`;
+  if(hasValue(r.urine))return `urine_${dt}_${r.urine}`;
+  if(hasValue(r.stool))return `stool_${dt}_${r.stool}`;
   const base=[dt,r.type,r.spo2??"",r.hr??"",r.temp??"",r.weight??"",stripKey(r.memo)].join("|");
   let h=0;for(let i=0;i<base.length;i++){h=((h<<5)-h)+base.charCodeAt(i);h|=0}
   return "r_"+Math.abs(h).toString(36);
@@ -993,26 +1024,60 @@ function parsePasteText(){
 
 
 
-async function saveRows(rows){
-  if(!currentCode){alert("먼저 입장하세요.");show("join");return {saved:0,failed:0};}
-  let saved=0,failed=0;
-  const errors=[];
-  for(const r of rows||[]){
+// 추가·수정·CSV·중복정리·첨부 변경이 모두 이 저장 경로를 사용한다.
+function normalizeRecord(r){
+  const time=getLogTimeInfo(r);
+  if(!time.time)throw new Error(`날짜/시간을 확인하세요: ${r.dt||"없음"}`);
+  return annotateSuction({...Object.fromEntries(Object.entries(r).filter(([,v])=>v!==undefined)),memo:stripKey(r.memo||"")});
+}
+function prepareRecordWrites(rows){
+  const writes=new Map();
+  for(const row of rows||[]){
+    const r=normalizeRecord(row), id=r.id||r.key||recordId(r);
+    writes.set(id,{id,row:r}); // 같은 저장 ID는 마지막 기록으로 한 번만 저장한다.
+  }
+  return [...writes.values()].sort((a,b)=>compareRecords(a.row,b.row));
+}
+async function commitRecordChanges({writes=[],deletes=[]}={}){
+  const path=recordsPath();
+  if(!path)throw new Error("먼저 입장하세요.");
+  const stats={saved:0,deleted:0,failed:0,total:writes.length+deletes.length,errors:[]};
+  for(const change of [...writes.map(w=>({...w,remove:false})),...deletes.map(id=>({id,remove:true}))]){
     try{
-      const id=recordId(r);
-      await setDoc(doc(db,recordsPath(),id),{...r,key:id},{merge:false});
-      saved++;
+      if(!change.id)throw new Error("기록 ID가 없습니다.");
+      const target=doc(db,path,change.id);
+      if(change.remove){await deleteDoc(target);stats.deleted++;}
+      else{
+        const r=change.row;
+        await setDoc(target,{...r,key:change.id,warning:warning(r),updatedAt:serverTimestamp()},{merge:false});
+        stats.saved++;
+      }
     }catch(e){
-      failed++;
-      errors.push(String(e&&e.message||e));
+      stats.failed++;stats.errors.push(String(e?.message||e));
+      // CSV 동기화 등에서는 저장 실패 후 삭제 단계에 진입하지 않는다.
+      if(writes.length)break;
     }
   }
-  const stats={saved,failed,total:(rows||[]).length,errors};
-  window._lastSaveStats=stats;
-  if(failed) throw new Error(`저장 ${saved}개 성공 / ${failed}개 실패: ${errors[0]||"원인 미상"}`);
+  if(stats.failed&&writes.length)stats.failed=stats.total-stats.saved-stats.deleted;
   return stats;
 }
-
+function assertSaved(stats){
+  if(stats.failed)throw new Error(`저장 ${stats.saved}개 / 삭제 ${stats.deleted}개 / 실패·미실행 ${stats.failed}개: ${stats.errors[0]||"원인 미상"}`);
+  return stats;
+}
+async function saveRows(rows){
+  if(!currentCode)throw new Error("먼저 입장하세요.");
+  const stats=await commitRecordChanges({writes:prepareRecordWrites(rows)});
+  window._lastSaveStats=stats;
+  return assertSaved(stats);
+}
+async function deleteRows(ids){
+  return commitRecordChanges({deletes:[...new Set(ids)]});
+}
+async function persistDailySummary(summary,extra={}){
+  if(!currentCode)throw new Error("먼저 입장하세요.");
+  await setDoc(doc(db,`families/${currentCode}/dailySummaries`,summary.날짜),{...summary,...extra,updatedAt:serverTimestamp()},{merge:false});
+}
 
 function fillInputFromRecord(r){
   $("dt").value=r.dt||nowInput();
@@ -1030,7 +1095,7 @@ function editRecord(id){
   setEditingId(id);
   show("input");
   const set = (id2, v) => { const el = $(id2); if(el) el.value = (v ?? ""); };
-  set("dt", (r.dt || "").slice(0,16));
+  set("dt", getLogTimeInfo(r).minuteKey);
   set("type", r.type || "특이사항");
   ["spo2","hr","temp","oxygen","weight","sbp","dbp","feed","water","residual","urine","stool","hob","position","positionDetail","breath"].forEach(k=>set(k,r[k]));
   set("memo", stripKey(r.memo||""));
@@ -1057,14 +1122,15 @@ async function saveManual(){
       sbp:num("sbp"),dbp:num("dbp"),
       feed:num("feed"),water:num("water"),residual:num("residual"),urine:num("urine"),stool:num("stool"),hob:num("hob"),
       position:val("position"),positionDetail:val("positionDetail"),
-      breath:val("breath")||(typeof breathStatus==="function"?breathStatus(val("memo")):""),
+      breath:val("breath")||breathStatus(val("memo")),
       memo:val("memo"),
       source:"manual",
       authorName:currentAuthor||"가족",
       familyCode:currentCode
     };
     const editingId=getEditingId();
-    const id=editingId || (typeof recordId==="function"?recordId(r):String(Date.now()));
+    normalizeRecord(r); // 업로드 전에 입력값을 확인한다.
+    const id=editingId||recordId(r);
     const files=mediaFiles();
     if(files.length) {
       const ok=confirm(`사진/영상 ${files.length}개를 업로드하고 기록에 첨부할까요?`);
@@ -1078,8 +1144,7 @@ async function saveManual(){
       const old=(allRows||[]).find(x=>(x.id||x.key||recordId(x))===editingId);
       if(old && old.media && old.media.length) existingMedia=old.media;
       if(existingMedia.length || uploaded.length) r.media=[...existingMedia,...uploaded];
-      const fixed=typeof annotateSuction==="function"?annotateSuction({...r,id:editingId}):{...r,id:editingId};
-      await setDoc(doc(db,recordsPath(),editingId),{...fixed,key:editingId,warning:typeof warning==="function"?warning(fixed):"",updatedAt:serverTimestamp()},{merge:false});
+      await saveRows([{...r,id:editingId}]);
       setEditingId("");
       const st=$("editStatus"); if(st) st.textContent="";
       const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="none";
@@ -1090,8 +1155,7 @@ async function saveManual(){
       return;
     }
 
-    if(typeof saveRows==="function") await saveRows([r]);
-    else await setDoc(doc(db,recordsPath(),id),{...r,key:id,updatedAt:serverTimestamp()},{merge:false});
+    await saveRows([r]);
     if(typeof clearInput==="function") clearInput();
     clearMediaInput();
     alert(uploaded.length?`저장했습니다. 첨부 ${uploaded.length}개 포함.`:"저장했습니다.");
@@ -1116,7 +1180,7 @@ setTimeout(()=>{const d=localDate(); if($("gptStart")) $("gptStart").value=d; if
 function groupRowsByDate(rows){
   const map={};
   for(const r of rows||[]){
-    const d=(r.dt||"").slice(0,10)||"날짜없음";
+    const d=getLogTimeInfo(r).dateKey||"날짜없음";
     (map[d] ||= []).push(r);
   }
   return Object.keys(map).sort().map(date=>({
@@ -1126,7 +1190,7 @@ function groupRowsByDate(rows){
 }
 
 function oneLineRecord(r,i){
-  const time=(r.dt||"").slice(11,16);
+  const time=getLogTimeInfo(r).time;
   const d=typeof detail==="function" ? detail(r) : "";
   const memo=stripKey(r.memo||"").replace(/\n+/g," / ");
   return `${i+1}. ${time} [${r.type||""}] ${d}${d?" / ":""}${memo}`;
@@ -1142,7 +1206,7 @@ function normalizeRecordText(s){
 
 function duplicateKeyOfRow(r){
   return [
-    (r.dt||"").slice(0,16),
+    getLogTimeInfo(r).minuteKey,
     r.type||"",
     normalizeRecordText(r.memo||"")
   ].join("|");
@@ -1181,7 +1245,7 @@ function dateCountTableHtml(rows){
 function detectYearWarnings(rows, sourceText=""){
   const warnings=[];
   const text=String(sourceText||"");
-  const dates=[...new Set((rows||[]).map(r=>(r.dt||"").slice(0,10)).filter(Boolean))].sort();
+  const dates=[...new Set((rows||[]).map(r=>getLogTimeInfo(r).dateKey).filter(Boolean))].sort();
   const years=[...new Set(dates.map(d=>d.slice(0,4)))];
   if(/^\s*\d{1,2}\s*(?:\/|월\s*)\d{1,2}/m.test(text)){
     warnings.push(`연도 없는 날짜가 포함되어 있습니다. 기본 연도 ${importBaseYear()}년으로 저장됩니다.`);
@@ -1285,11 +1349,7 @@ async function savePastedDailySummaries(rows){
   for(const g of groups){
     if(g.date==="날짜없음") continue;
     const o=summaryObj(g.date,g.rows);
-    await setDoc(doc(db,`families/${currentCode}/dailySummaries`,g.date),{
-      ...o,
-      source:"paste-date-group",
-      updatedAt:serverTimestamp()
-    },{merge:false});
+    await persistDailySummary(o,{source:"paste-date-group"});
     n++;
   }
   return n;
@@ -1335,13 +1395,25 @@ function joinFamily(){
   $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor}`;
   show("input");
 }
-function todayRows(){const d=localDate();return allRows.filter(r=>(r.dt||"").slice(0,10)===d)}
-function sum(rows,k){return rows.reduce((a,r)=>a+(Number(r[k])||0),0)}
-function count(rows,t){return rows.filter(r=>r.type===t).length}
+function todayRows(){const d=localDate();return allRows.filter(r=>getLogTimeInfo(r).dateKey===d)}
+// DOM・Firebase・状態更新を含まない。画面・CSV・コピーはこの計算結果だけを使う。
+function summarizeLogs(rows){
+  const totals={};
+  for(const meta of Object.values(TOTAL_FIELDS))totals[meta.summary]=0;
+  for(const meta of Object.values(LOG_TYPES))if(meta.summary)totals[meta.summary]=0;
+  let latestWeight=null;
+  for(const r of rows){
+    for(const [field,meta] of Object.entries(TOTAL_FIELDS))totals[meta.summary]+=Number(r[field])||0;
+    const type=getLogType(r);
+    if(type?.summary)totals[type.summary]++;
+    if(hasValue(r.weight)&&(!latestWeight||compareRecords(latestWeight,r)<=0))latestWeight=r;
+  }
+  return {기록수:rows.length,...totals,체중:latestWeight?.weight??""};
+}
 function summaryObj(date,rows){
-  const latestW=(rows.filter(r=>r.weight!==null&&r.weight!==undefined&&r.weight!=="").sort((a,b)=>(a.dt||"").localeCompare(b.dt||"")).pop()||{}).weight??"";
-  const text=[`${date} 요약`,`기록 ${rows.length}개`,`식사 ${sum(rows,"feed")}mL / 물 ${sum(rows,"water")}mL`,`소변 ${sum(rows,"urine")} / 대변 ${sum(rows,"stool")}`,`네뷸 ${count(rows,"네뷸")}회 / 토닥이 ${count(rows,"토닥이")}회 / 석션 ${count(rows,"석션")}회 / 구강청소 ${count(rows,"구강청소")}회 / ROM ${count(rows,"수동적 ROM")}회`,latestW?`체중 ${latestW}kg`:""].filter(Boolean).join("\n");
-  return {날짜:date,기록수:rows.length,식사:sum(rows,"feed"),물:sum(rows,"water"),소변:sum(rows,"urine"),대변:sum(rows,"stool"),네뷸:count(rows,"네뷸"),토닥이:count(rows,"토닥이"),석션:count(rows,"석션"),구강청소:count(rows,"구강청소"),수동적ROM:count(rows,"수동적 ROM"),체중:latestW,요약:text};
+  const o={날짜:date,...summarizeLogs(rows)};
+  const text=[`${date} 요약`,`기록 ${o.기록수}개`,`식사 ${o.식사}mL / 물 ${o.물}mL`,`소변 ${o.소변} / 대변 ${o.대변}`,`네뷸 ${o.네뷸}회 / 토닥이 ${o.토닥이}회 / 석션 ${o.석션}회 / 구강청소 ${o.구강청소}회 / ROM ${o.수동적ROM}회`,o.체중?`체중 ${o.체중}kg`:""].filter(Boolean).join("\n");
+  return {...o,요약:text};
 }
 
 function folderKey(s){
@@ -1351,7 +1423,7 @@ function folderKey(s){
 function recordsTree(groups){
   const tree={};
   for(const g of groups||[]){
-    const [y,m]=String(g.date||"날짜없음").split("-");
+    const {year:y,month:m}=getLogTimeInfo(g.date);
     const yy=y||"날짜없음";
     const mm=m||"기타";
     tree[yy] ||= {};
@@ -1371,7 +1443,7 @@ function openRecentRecordFolders(){
   const groups=groupRowsByDate(allRows);
   if(!groups.length) return;
   const last=groups[groups.length-1].date;
-  const [y,m]=last.split("-");
+  const {year:y,month:m}=getLogTimeInfo(last);
   ["year_"+folderKey(y),"month_"+folderKey(y+"_"+m),"day_"+folderKey(last)].forEach(id=>{
     const el=$(id);
     if(el) el.style.display="block";
@@ -1488,8 +1560,8 @@ function mediaUploadSelfTest(){
 
 function render(){
   if(currentCode) $("roomStatus").textContent=`입장: ${currentCode} / ${currentAuthor} · 기록 ${allRows.length}개`;
-  const today = typeof todayRows==="function" ? todayRows() : allRows.filter(r=>(r.dt||"").slice(0,10)===localDate());
-  const obj = typeof summaryObj==="function" ? summaryObj(localDate(), today) : {};
+  const today=todayRows();
+  const obj=summaryObj(localDate(),today);
   const ts=$("todaySummary");
   if(ts){
     ts.innerHTML = Object.keys(obj).length
@@ -1572,7 +1644,7 @@ function render(){
 
 function detail(r){const a=[];["spo2","hr","temp","oxygen","weight","feed","water","residual","urine","stool","hob"].forEach(k=>{if(r[k]!==null&&r[k]!==undefined&&r[k]!=="")a.push(`${k}:${r[k]}`)}); if(r.sbp)a.push(`BP:${r.sbp}/${r.dbp||""}`); if(r.position)a.push(r.position); if(r.breath)a.push(r.breath); return a.join(" / ")}
 function escapeHtml(s){return String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
-async function deleteRecord(id){const r=allRows.find(x=>x.id===id);const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";if(!confirm(`이 기록을 삭제할까요?\n\n${label}`))return;await deleteDoc(doc(db,recordsPath(),id))}
+async function deleteRecord(id){const r=allRows.find(x=>x.id===id);const label=r?`${r.dt||""} [${r.type||""}]\n${stripKey(r.memo||"").slice(0,80)}`:"";if(!confirm(`이 기록을 삭제할까요?\n\n${label}`))return;assertSaved(await deleteRows([id]))}
 async function copyTodaySummary(){await navigator.clipboard.writeText(summaryObj(localDate(),todayRows()).요약);alert("복사했습니다.")}
 
 function csvEsc(v){const s=String(v??"");return /[",\n\r]/.test(s)?`"${s.replace(/"/g,'""')}"`:s}
@@ -1585,21 +1657,32 @@ function csvNum(v){const s=String(v??"").trim();if(!s)return null;const n=Number
 function csvRecord(o){return {dt:o["날짜시간"]||"",type:o["기록종류"]||"특이사항",spo2:csvNum(o["SpO2"]),hr:csvNum(o["HR"]),temp:csvNum(o["체온"]),oxygen:csvNum(o["산소"]),weight:csvNum(o["체중"]),sbp:csvNum(o["혈압수축"]),dbp:csvNum(o["혈압이완"]),feed:csvNum(o["식사"]),water:csvNum(o["물"]),residual:csvNum(o["잔류"]),urine:csvNum(o["소변"]),stool:csvNum(o["대변"]),hob:csvNum(o["HOB"]),position:o["체위"]||"",positionDetail:o["체위상세"]||"",breath:o["호흡"]||"",memo:stripKey(o["메모"]||""),authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()}}
 async function readCsvFile(){const f=$("csvFile").files[0];if(!f)throw new Error("CSV 파일을 선택하세요.");return await f.text()}
 async function applyCsv(deleteMissing){
-  if(!currentCode){alert("먼저 입장하세요.");return}
-  let text;try{text=await readCsvFile()}catch(e){alert(e.message);return}
-  const rows=parseCsv(text), heads=rows[0].map(h=>String(h).replace(/^\ufeff/,"").trim()), data=rows.slice(1).map(r=>{const o={};heads.forEach((h,i)=>o[h]=r[i]??"");return o});
-  const ids=new Set(); if(!confirm(`${data.length}개 반영${deleteMissing?" 및 삭제 동기화":""}할까요?`))return;
-  for(const o of data){const r=csvRecord(o),id=(o.id||o.ID||"").trim()||recordId(r);ids.add(id);await setDoc(doc(db,recordsPath(),id),{...r,key:id},{merge:false})}
-  if(deleteMissing){for(const r of allRows){const id=r.id||recordId(r);if(!ids.has(id))await deleteDoc(doc(db,recordsPath(),id))}}
-  $("csvFile").value=""; alert("완료했습니다.");
+  if(!currentCode){alert("먼저 입장하세요.");return;}
+  try{
+    const text=await readCsvFile(),rows=parseCsv(text);
+    if(!rows.length)throw new Error("CSV가 비어 있습니다.");
+    const heads=rows[0].map(h=>String(h).replace(/^\ufeff/,"").trim());
+    if(!heads.includes("날짜시간")||!heads.includes("기록종류"))throw new Error("수정용 CSV의 날짜시간·기록종류 열이 필요합니다.");
+    const data=rows.slice(1).map(row=>{
+      const o={};heads.forEach((h,i)=>o[h]=row[i]??"");
+      return {...csvRecord(o),id:(o.id||o.ID||"").trim()||undefined};
+    });
+    const writes=prepareRecordWrites(data),ids=new Set(writes.map(w=>w.id));
+    const deletes=deleteMissing?allRows.map(recordDisplayId).filter(id=>!ids.has(id)):[];
+    if(!confirm(`${data.length}개 반영${deleteMissing?" 및 삭제 동기화":""}할까요?`))return;
+    assertSaved(await commitRecordChanges({writes,deletes}));
+    $("csvFile").value="";alert("완료했습니다.");
+  }catch(e){alert("CSV 반영 오류: "+(e?.message||e));}
 }
+
 function summaryCsv(rows){const h=["날짜","기록수","식사","물","소변","대변","네뷸","토닥이","석션","구강청소","수동적ROM","체중","요약"];return "\ufeff"+[h,...rows.map(o=>h.map(k=>o[k]??""))].map(r=>r.map(csvEsc).join(",")).join("\n")}
-function byDate(){const m={};for(const r of allRows){const d=(r.dt||"").slice(0,10);if(d)(m[d]||=[]).push(r)}return Object.keys(m).sort().map(d=>summaryObj(d,m[d]))}
+function byDate(){return groupRowsByDate(allRows).filter(g=>g.date!=="날짜없음").map(g=>summaryObj(g.date,g.rows));}
+
 function downloadDailySummaryCsv(){const rows=byDate();if(!rows.length){alert("내보낼 요약이 없습니다.");return;}download(`아버지_케어로그_날짜별요약_${localDate()}.csv`,summaryCsv(rows))}
 function downloadTodaySummaryCsv(){download(`아버지_케어로그_오늘요약_${localDate()}.csv`,summaryCsv([summaryObj(localDate(),todayRows())]))}
-async function saveTodaySummaryByDate(){const d=localDate();await setDoc(doc(db,`families/${currentCode}/dailySummaries`,d),{...summaryObj(d,todayRows()),updatedAt:serverTimestamp()},{merge:false});alert("저장했습니다.")}
-async function saveAllDailySummaries(){for(const o of byDate())await setDoc(doc(db,`families/${currentCode}/dailySummaries`,o.날짜),{...o,updatedAt:serverTimestamp()},{merge:false});alert("저장했습니다.")}
-async function collapseSameTimeMeals(){const groups={};for(const r of allRows){if(isMeal(r))(groups[recordId(r)]||=[]).push(r)};let del=0;for(const [id,arr] of Object.entries(groups)){if(arr.length>1){const keep=arr[arr.length-1];await setDoc(doc(db,recordsPath(),id),{...keep,key:id},{merge:false});for(const r of arr){if(r.id&&r.id!==id){await deleteDoc(doc(db,recordsPath(),r.id));del++}}}}alert(`정리 완료: ${del}개 삭제`)}
+async function saveTodaySummaryByDate(){await persistDailySummary(summaryObj(localDate(),todayRows()));alert("저장했습니다.")}
+async function saveAllDailySummaries(){for(const o of byDate())await persistDailySummary(o);alert("저장했습니다.")}
+async function collapseSameTimeMeals(){const groups={};for(const r of allRows){if(isMeal(r))(groups[recordId(r)]||=[]).push(r)};let del=0;for(const [id,arr] of Object.entries(groups)){if(arr.length>1){const keep=arr[arr.length-1];await saveRows([{...keep,id,key:id}]);for(const r of arr){if(r.id&&r.id!==id){assertSaved(await deleteRows([r.id]));del++}}}}alert(`정리 완료: ${del}개 삭제`)}
 
 
 
@@ -1635,7 +1718,7 @@ async function copyTextSafely(text){
 
 function rowsBetween(start,end){
   return allRows.filter(r=>{
-    const d=(r.dt||"").slice(0,10);
+    const d=getLogTimeInfo(r).dateKey;
     if(!d) return false;
     if(start && d<start) return false;
     if(end && d>end) return false;
@@ -1669,9 +1752,9 @@ function gptTextForRows(rows,title){
   const clipped=rows.length>maxRows;
   if(clipped) rows=rows.slice(-maxRows);
 
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)).filter(Boolean))];
+  const dates=[...new Set(rows.map(r=>getLogTimeInfo(r).dateKey).filter(Boolean))];
   const summaries=dates.map(d=>{
-    const rs=rows.filter(r=>(r.dt||"").slice(0,10)===d);
+    const rs=rows.filter(r=>getLogTimeInfo(r).dateKey===d);
     return summaryObj(d,rs).요약;
   }).join("\n\n");
 
@@ -1895,7 +1978,7 @@ function fileDateFixSelfTest(){
 09:30 나상근 회진: 알부민 2.1로 2병 투여 예정, Hb 7.7 설명.
 13:45~15:45 점심식사 330mL(400kcal), 물 160mL.`;
   const rows=parseTextToRows(sample);
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)))];
+  const dates=[...new Set(rows.map(r=>getLogTimeInfo(r).dateKey))];
   return {
     ok: dates.includes("2026-03-28") && dates.includes("2026-04-02") && !dates.includes("2026-02-01") && !dates.includes("2026-02-10"),
     dates,
@@ -1908,6 +1991,7 @@ function yearImportSelfTest(){
   const oldCustom=$("importYearCustom")?.value;
   if($("importYearMode")) $("importYearMode").value="2025";
   if($("importYearCustom")) $("importYearCustom").value="2025";
+  syncImportYearBox("paste");
   const sample=`6/20 토 100일차
 ㅇ3:50 소변 75g
 2026.6/21 일 101일차
@@ -1915,7 +1999,7 @@ function yearImportSelfTest(){
 2025.7/1 화 111일차
 ㅇ5:00 물 120mL`;
   const rows=parseTextToRows(sample);
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)))].sort();
+  const dates=[...new Set(rows.map(r=>getLogTimeInfo(r).dateKey))].sort();
   if($("importYearMode")) $("importYearMode").value=oldMode||"2026";
   if($("importYearCustom")) $("importYearCustom").value=oldCustom||"2026";
   syncImportYearBox();
@@ -1936,7 +2020,7 @@ function linkTabYearSelfTest(){
 2026.6/21 일 101일차
 ㅇ4:00 소변 100g`;
   const rows=parseGptIncomingText();
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)))].sort();
+  const dates=[...new Set(rows.map(r=>getLogTimeInfo(r).dateKey))].sort();
   if(txt) txt.value=oldTxt;
   if($("gptImportYearMode")) $("gptImportYearMode").value=oldMode||"2026";
   if($("gptImportYearCustom")) $("gptImportYearCustom").value=oldCustom||"2026";
@@ -1966,7 +2050,7 @@ async function deleteMediaAttachment(recordSafeId,idx){
       }
     }
     list.splice(idx,1);
-    await setDoc(doc(db,recordsPath(),id),{...rec,media:list,attachments:list,key:id,updatedAt:serverTimestamp()},{merge:false});
+    await saveRows([{...rec,id,media:list,attachments:list}]);
     alert(storageDeleted?"첨부파일을 삭제했습니다.":"기록에서 첨부 링크를 제거했습니다. Storage 파일은 권한 문제로 남아 있을 수 있습니다.");
   }catch(e){
     if(typeof showError==="function") showError("첨부 삭제",e);
@@ -1984,7 +2068,7 @@ function fileImportStrongSelfTest(){
   const sample=`2025.6/20 토 100일차 ㅇ1:00 소변 10g ㅇ2:00 소변 20g ㅇ3:00 소변 30g - 하위 설명 ㅇ4:00 아침식사 330mL, 물 120mL 2025.6/21 일 101일차 ㅇ1:00 석션 1/2 깊은 ㅇ2:00 대변 40g`;
   if($("gptInText")) $("gptInText").value=normalizeCareLogTextForParser(sample);
   const rows=parseGptIncomingText();
-  const dates=[...new Set(rows.map(r=>(r.dt||"").slice(0,10)))].sort();
+  const dates=[...new Set(rows.map(r=>getLogTimeInfo(r).dateKey))].sort();
   if($("gptInText")) $("gptInText").value=old;
   return {
     ok: rows.length>=6 && dates.includes("2025-06-20") && dates.includes("2025-06-21"),
@@ -2120,8 +2204,8 @@ function isLongMemoForLooseDedupe(r){
 }
 
 function bulkDuplicateKey(r){
-  const date=(r&&r.dt||"").slice(0,10);
-  const time=(r&&r.dt||"").slice(0,16);
+  const date=getLogTimeInfo(r).dateKey;
+  const time=getLogTimeInfo(r).minuteKey;
   const type=r&&r.type||"";
   const text=stableRecordTextForDedupe(r);
   const structured=structuredDedupeSignature(r);
@@ -2173,7 +2257,7 @@ async function removeBulkDuplicates(){
       const rr=x.remove;
       const id=rr.id||rr.key||(typeof recordId==="function"?recordId(rr):"");
       if(!id){failed++; continue;}
-      try{await deleteDoc(doc(db,recordsPath(),id)); deleted++;}
+      try{assertSaved(await deleteRows([id])); deleted++;}
       catch(e){failed++;}
     }
     alert(`중복 정리 완료\n삭제 ${deleted}개${failed?`\n실패 ${failed}개`:""}`);
@@ -2266,7 +2350,7 @@ async function deleteSelectedBulkDuplicates(){
       const rec=(allRows||[]).find(r=>safeIdForButton(recordDisplayId(r))===safeId);
       const id=rec?recordDisplayId(rec):"";
       if(!id){failed++;continue;}
-      try{await deleteDoc(doc(db,recordsPath(),id));deleted++;}
+      try{assertSaved(await deleteRows([id]));deleted++;}
       catch(e){failed++;}
     }
     alert(`선택 중복기록 삭제 완료\n삭제 ${deleted}개${failed?`\n실패 ${failed}개`:""}`);
@@ -2322,7 +2406,7 @@ function appHealthCheck(){
 
   const okCount=tests.filter(t=>t.ok).length;
   const text=tests.map(t=>`${t.ok?"✅":"❌"} ${t.name}${t.detail?` — ${t.detail}`:""}`).join("\n");
-  alert(`V43 Sol 앱 자체점검\n${okCount}/${tests.length} 통과\n\n${text}`);
+  alert(`V44 앱 자체점검\n${okCount}/${tests.length} 통과\n\n${text}`);
   return {ok:okCount===tests.length,tests};
 }
 
