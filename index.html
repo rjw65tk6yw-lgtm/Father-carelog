@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 V44.22 · 대소변 계산식 수정</title>
+<title>아버지 케어로그 V44.23 · 기록 저장·과거 계산식 정정</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -364,7 +364,7 @@ h1,h2,h3{color:#f8fafc!important}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 V44.22 · 대소변 계산식 수정</h1><div id="roomStatus" class="small">입장 전</div><div id="cloudStatus" class="small" role="status" aria-live="polite">Firebase: 입장 또는 메모 동기화 후 연결 확인</div></header>
+<header><h1>아버지 케어로그 V44.23 · 기록 저장·과거 계산식 정정</h1><div id="roomStatus" class="small">입장 전</div><div id="cloudStatus" class="small" role="status" aria-live="polite">Firebase: 입장 또는 메모 동기화 후 연결 확인</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -411,6 +411,7 @@ h1,h2,h3{color:#f8fafc!important}
 </div>
 
 <button class="primary" onclick="saveManual()">저장</button><button onclick="clearInput()">비우기</button><button id="cancelEditBtn" style="display:none" onclick="cancelEdit()">수정 취소</button></div>
+<div id="manualSaveStatus" role="status" aria-live="polite" class="small"></div>
 </div>
 
 <div class="card">
@@ -467,6 +468,16 @@ h1,h2,h3{color:#f8fafc!important}
 </section>
 
 <section id="screen-records" style="display:none">
+<div class="card" id="outputRepairCard">
+<h2>이전 버전 소변·대변 계산식 정정</h2>
+<div class="note">이전 버전에서 잘못 저장된 기록도 수정할 수 있습니다. 원문 메모에 <b>대변 350-120=230g</b>처럼 등호가 있고, 실제 저장값이 좌변 첫 숫자와 일치할 때만 후보로 표시합니다. 수동 기록도 포함하며 시간·본문·다른 활력징후·첨부파일·ID는 보존합니다. 수정하기 전에 아래 CSV를 백업하세요.</div>
+<div class="row">
+<button onclick="downloadEditableCsv()">정정 전 CSV 백업</button>
+<button class="primary" onclick="previewHistoricalOutputRepairs()">기존 기록 정정 후보 확인</button>
+</div>
+<pre id="outputRepairReview" class="small" style="white-space:pre-wrap;max-height:360px;overflow:auto" aria-live="polite">아직 검사하지 않았습니다.</pre>
+<div class="row"><button id="outputRepairApplyBtn" class="primary" style="display:none" onclick="applyHistoricalOutputRepairs()">확인한 계산식 정정 적용</button></div>
+</div>
 <div class="card">
 <h2>오늘 기록·요약</h2>
 <div id="todaySummary"></div>
@@ -607,7 +618,7 @@ h1,h2,h3{color:#f8fafc!important}
 <!-- 다크모드 기본 적용 -->
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-app.js";
-import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
+import { getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot, getDoc, serverTimestamp, runTransaction } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-firestore.js";
 import { getStorage, ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.4/firebase-storage.js";
 
 const firebaseConfig={
@@ -1031,6 +1042,101 @@ function outputEquationSelfTest(){
   const results=cases.map(([text,urine,stool])=>{const r=parseLine(text,"2026-10-28");return {text,expected:[urine,stool],actual:[r.urine,r.stool],ok:r.urine===urine&&r.stool===stool};});
   return {ok:results.every(r=>r.ok),results};
 }
+// V44.23: 과거 저장 기록의 메모 원문에서 산술식이 완전할 때만 정정.
+// 단순 계산을 수행하여 등호 우변을 검산한다. eval이나 임의 실행은 하지 않는다.
+function outputRepairEquationEvidence(text,kind){
+  const source=String(text||"");
+  const token=kind==="urine"?/소변/g:/대변/g;
+  const unit="(?:g|그램|ml|mL|cc)?";
+  const num="(\\d{1,3}(?:,\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?)";
+  const rx=new RegExp(num+"\\s*"+unit+"\\s*([+\\-−])\\s*"+num+"\\s*"+unit+"\\s*=\\s*(?:약\\s*)?"+num+"\\s*"+unit+"(?=$|[^a-zA-Z0-9])","i");
+  for(const m of source.matchAll(token)){
+    const after=source.slice(m.index+m[0].length);
+    const nextLabel=after.search(/(?:소변|대변)/);
+    const segment=after.slice(0,nextLabel>=0?nextLabel:undefined).split(/[\n;；，]|,(?!\d{3}(?:\D|$))/)[0].slice(0,200);
+    const a=segment.match(rx);
+    if(!a)continue;
+    const left=Number(a[1].replace(/,/g,"")),rightInput=Number(a[3].replace(/,/g,"")),answer=Number(a[4].replace(/,/g,""));
+    const expected=a[2]==="+"?left+rightInput:left-rightInput;
+    if(![left,rightInput,answer,expected].every(Number.isFinite) || answer<0 || Math.abs(expected-answer)>0.11)continue;
+    if(outputAmountFromEquation(source,kind)!==answer)continue;
+    return {field:kind,first:left,right:answer,equation:a[0].trim()};
+  }
+  return null;
+}
+function outputRepairPatch(r){
+  const patch={}, evidence=[];
+  for(const kind of ["urine","stool"]){
+    const found=outputRepairEquationEvidence(r.memo,kind);
+    if(!found)continue;
+    const old=r[kind];
+    // 명시적으로 기록된 값이 좌변 첫 번째 숫자일 때만 오인식으로 확정한다.
+    if(!hasValue(old) || Number(old)!==found.first || found.first===found.right)continue;
+    patch[kind]=found.right;
+    evidence.push({field:kind,before:Number(old),after:found.right,equation:found.equation});
+  }
+  return evidence.length?{patch,evidence}:null;
+}
+let outputRepairCandidates=[];
+function previewHistoricalOutputRepairs(){
+  const display=$("outputRepairReview"),btn=$("outputRepairApplyBtn");
+  outputRepairCandidates=[];
+  if(btn)btn.style.display="none";
+  if(!currentCode){display.textContent="먼저 가족 코드로 입장하세요.";return;}
+  if(cloudListenerFailed){display.textContent="Firebase 읽기 실패 상태입니다. 서버 연결을 확인한 뒤 다시 시도하세요.";return;}
+  outputRepairCandidates=allRows.map(r=>{
+    const found=outputRepairPatch(r);
+    return found?{id:r.id,dt:r.dt,type:r.type,patch:found.patch,evidence:found.evidence,memo:String(r.memo||"")}:null;
+  }).filter(Boolean);
+  if(!outputRepairCandidates.length){display.textContent=`현재 로드된 ${allRows.length}건에서 검산 가능한 잘못된 계산식 기록이 없습니다. 원본 메모에 등호가 없거나 숫자가 이미 수정된 기록은 변경하지 않습니다.`;return;}
+  const lines=outputRepairCandidates.flatMap(x=>x.evidence.map(e=>`${x.dt} [${x.type}] ${e.field==="urine"?"소변":"대변"} ${e.before} → ${e.after} (${e.equation})`));
+  display.textContent=`현재 화면에서 ${allRows.length}건 확인 · 자동 정정 대상 ${outputRepairCandidates.length}개 기록 / ${lines.length}개 수치\n\n${lines.slice(0,80).join("\n")}${lines.length>80?`\n외 ${lines.length-80}개 (다음 확인에서 전부 적용)`:""}\n\n원문과 좌변 산술, 우변 결과가 일치하는 기록만 대상입니다. 기존 record ID는 유지합니다.`;
+  if(btn)btn.style.display="inline-block";
+}
+async function applyHistoricalOutputRepairs(){
+  if(!currentCode||!outputRepairCandidates.length){alert("먼저 수정 후보를 확인하세요.");return;}
+  const candidates=outputRepairCandidates.slice(),label=candidates.reduce((n,r)=>n+r.evidence.length,0);
+  if(!confirm(`원본 계산식이 확인된 과거 기록 ${candidates.length}개에서 소변·대변 값 ${label}개만 수정할까요?\n\n적용 전에 CSV 백업을 권장합니다. 나머지 필드와 기록 ID는 유지합니다.`))return;
+  const btn=$("outputRepairApplyBtn"),display=$("outputRepairReview");
+  if(btn)btn.disabled=true;
+  let updated=0,skipped=0,failed=0;
+  const errors=[];
+  try{
+    for(const candidate of candidates){
+      try{
+        const ref=doc(db,recordsPath(),candidate.id);
+        const status=await runTransaction(db,async(tx)=>{
+          const snapshot=await tx.get(ref);
+          if(!snapshot.exists())return "skipped";
+          const old=snapshot.data();
+          // 다른 기기에서 수정된 기록은 덮어쓰지 않는다. 이전 버전의 메모 내용과 수치 재확인.
+          if(old.memo!==candidate.memo)return "skipped";
+          const actual=outputRepairPatch(old);
+          if(!actual)return "skipped";
+          if(JSON.stringify(actual.patch)!==JSON.stringify(candidate.patch))return "skipped";
+          tx.update(ref,{...actual.patch,updatedAt:serverTimestamp(),
+            equationRepair:{version:"V44.23",fields:actual.evidence.map(e=>({field:e.field,before:e.before,after:e.after}))}});
+          return "updated";
+        });
+        if(status==="updated")updated++;else skipped++;
+      }catch(e){failed++;errors.push(cloudErrorText(e));}
+      if((updated+skipped+failed)%10===0)display.textContent=`기존 기록 정정 중 ${updated+skipped+failed}/${candidates.length} · 수정 ${updated} · 건너뜀 ${skipped} · 실패 ${failed}`;
+    }
+    outputRepairCandidates=[];
+    display.textContent=`기존 기록 정정 종료: 수정 ${updated}건 · 다른 기기 변경/대상 제외 ${skipped}건 · 실패 ${failed}건.\n${errors.length?"오류: "+errors[0]:"저장된 값은 Firebase 실시간 목록에 반영됩니다."}\n다시 '정정 후보 확인'을 누르면 남아 있는 대상만 표시됩니다.`;
+    if(failed)cloudStatus("기존 기록 정정 일부 실패: "+errors[0],true);
+  }finally{if(btn){btn.disabled=false;btn.style.display="none";}}
+}
+function outputHistoricalRepairSelfTest(){
+  const samples=[
+    [{memo:"ㅇ10:20 대변 350-120=230g",stool:350},230],
+    [{memo:"ㅇ10:20 소변 1,010g-210g=800g",urine:1010},800],
+    [{memo:"ㅇ10:20 대변 350-120=220g",stool:350},null],
+    [{memo:"ㅇ10:20 대변 350-120=230g",stool:230},null],
+    [{memo:"ㅇ10:20 소변 670-200=470g, 대변 230-100=130g",urine:670,stool:230},[470,130]]
+  ];
+  return samples.map(([r,expected])=>{const p=outputRepairPatch(r)?.patch||{};const actual=Array.isArray(expected)?[p.urine,p.stool]:(p.stool??p.urine??null);return {expected,actual,ok:JSON.stringify(actual)===JSON.stringify(expected)};});
+}
 function parseLine(text,date){
   const s=cleanEvent(text), t=eventTime(s)||nowInput().slice(11,16);
   const urine=outputAmountFromEquation(s,"urine");
@@ -1197,12 +1303,14 @@ async function commitRecordChanges({writes=[],deletes=[]}={}){
         stats.saved++;
       }
     }catch(e){
-      stats.failed++;stats.errors.push(String(e?.message||e));
+      stats.failed++;stats.errors.push(cloudErrorText(e));
+      cloudStatus("기록 저장 실패: "+cloudErrorText(e),true);
       // CSV 동기화 등에서는 저장 실패 후 삭제 단계에 진입하지 않는다.
       if(writes.length)break;
     }
   }
   if(stats.failed&&writes.length)stats.failed=stats.total-stats.saved-stats.deleted;
+  else if(stats.saved>0)cloudStatus(`저장 성공 ${stats.saved}건 · 기록 목록 갱신 중`);
   return stats;
 }
 function assertSaved(stats){
@@ -1257,6 +1365,8 @@ function cancelEdit(){
 
 
 async function saveManual(){
+  const saveStatus=$("manualSaveStatus");
+  if(saveStatus)saveStatus.textContent="저장 요청 중…";
   try{
     if(!currentCode){alert("먼저 입장하세요.");show("join");return;}
     const r={
@@ -1295,6 +1405,7 @@ async function saveManual(){
       const cancel=$("cancelEditBtn"); if(cancel) cancel.style.display="none";
       if(typeof clearInput==="function") clearInput();
       clearMediaInput();
+      if(saveStatus)saveStatus.textContent="기존 기록 수정 저장 완료";
       alert("수정 저장했습니다.");
       show("records");
       return;
@@ -1303,8 +1414,11 @@ async function saveManual(){
     await saveRows([r]);
     if(typeof clearInput==="function") clearInput();
     clearMediaInput();
+    if(saveStatus)saveStatus.textContent="Firebase 쓰기 완료 · 기록 탭에서 확인하세요.";
     alert(uploaded.length?`저장했습니다. 첨부 ${uploaded.length}개 포함.`:"저장했습니다.");
   }catch(e){
+    if(saveStatus)saveStatus.textContent="저장 실패: "+cloudErrorText(e);
+    cloudStatus("직접 입력 저장 실패: "+cloudErrorText(e),true);
     if(typeof showError==="function") showError("직접 입력 저장",e);
     else alert("직접 입력 저장 오류: "+((e&&e.message)?e.message:e));
   }
@@ -2723,13 +2837,20 @@ async function importPendingAppleNote() {
     // a connection error. Older cached entries remain fast to avoid needless reads.
     const recentStart=Math.max(0,unique.length-150);
     let added=0, updated=0, unchanged=0, protectedCount=0, ambiguousCount=0, processed=0,verified=0;
-    noteSyncStatus(`원문 ${noteSyncPendingText.length.toLocaleString()}자 · 파싱 ${rows.length}건 · 저장대상 ${unique.length}건 · 최근 최대 150건 서버 재확인 중…`);
+    noteSyncStatus(`원문 ${noteSyncPendingText.length.toLocaleString()}자 · 파싱 ${rows.length}건 · 저장대상 ${unique.length}건 · 최신 기록부터 순서대로 저장 중…`);
     cloudStatus("메모 저장 진행 중…");
-    for(let index=0;index<unique.length;index++){
+    // Same dt/type can occur multiple times. Compute stable ordinals in ascending order first.
+    const ordinals=unique.map(item=>{
+      const key=`${item.row.dt}|${item.row.type}`;
+      anchorOrdinal[key]=(anchorOrdinal[key]||0)+1;
+      return anchorOrdinal[key];
+    });
+    // Save the newest records first, so Safari interruptions do not always lose the latest part.
+    for(let index=unique.length-1;index>=0;index--){
       const item=unique[index];
       const r=item.row, anchorBase=`${r.dt}|${r.type}`;
-      anchorOrdinal[anchorBase]=(anchorOrdinal[anchorBase]||0)+1;
-      const legacyAnchor=`${anchorBase}|${anchorOrdinal[anchorBase]}`;
+      const ordinal=ordinals[index];
+      const legacyAnchor=`${anchorBase}|${ordinal}`;
       const scopedAnchor=`${noteKey}|${legacyAnchor}`;
       let id=anchors[scopedAnchor]||anchors[legacyAnchor]||item.id;
       const signature=noteSyncRecordSignature(r);
@@ -2744,14 +2865,27 @@ async function importPendingAppleNote() {
         target=doc(db,`families/${cfg.familyCode}/records`,id);
         snapshot=await getDoc(target);
       }
+      if(snapshot.exists() && snapshot.data().source!==NOTE_SYNC_SOURCE){
+        // This ID belongs to a manual/CSV record. Never overwrite it.
+        // A different event at the same minute/type must receive its own note-scoped ID.
+        const old=snapshot.data();
+        const identicalEvent=old.dt===r.dt && old.type===r.type && normalizeRecordText(old.memo)===normalizeRecordText(r.memo);
+        if(identicalEvent){
+          // Exact historical duplicate is protected; repairable old values can be
+          // corrected separately in the historical-equation review, including manual entries.
+          protectedCount++;processed++;
+          delete anchors[scopedAnchor];delete cache[id];
+          continue;
+        }
+        id=`note_${noteKey}_${noteSyncHash(legacyAnchor)}`;
+        target=doc(db,`families/${cfg.familyCode}/records`,id);
+        snapshot=await getDoc(target);
+        if(snapshot.exists() && snapshot.data().source!==NOTE_SYNC_SOURCE){
+          protectedCount++;processed++;continue;
+        }
+      }
       if(snapshot.exists()){
         const old=snapshot.data();
-        if(old.source!==NOTE_SYNC_SOURCE){
-          protectedCount++;
-          cache[id]=signature;anchors[scopedAnchor]=id;
-          saveNoteSyncCache(cfg.familyCode,cache);saveNoteSyncAnchors(cfg.familyCode,anchors);
-          processed++;continue;
-        }
         if(old.noteSourceKey && old.noteSourceKey!==noteKey){
           protectedCount++;processed++;continue;
         }
@@ -2774,17 +2908,18 @@ async function importPendingAppleNote() {
       saveNoteSyncCache(cfg.familyCode,cache);
       saveNoteSyncAnchors(cfg.familyCode,anchors);
       processed++;
-      if(processed%10===0){
+      if(processed===1 || processed%10===0){
         noteSyncStatus(`동기화 중 ${processed}/${unique.length}건 · 신규 ${added} · 수정 ${updated} · 변경 없음 ${unchanged} · 최근 서버 대조 ${verified}`);
         await new Promise(resolve=>setTimeout(resolve,0));
       }
     }
+    // Latest records were written first. Keep all Firestore records and the source note intact.
     noteSyncPendingText="";
     // This is also a "login" for the selected local family room: notes can be
     // written before the user has opened the separate 입장 tab in this Safari tab.
     // Attaching the listener afterwards makes the new records visible right away.
     watchFamilyRecords(cfg.familyCode,cfg.authorName);
-    noteSyncStatus(`Apple 메모 반영 완료\n신규 ${added}건 · 수정 ${updated}건 · 변경 없음 ${unchanged}건 · 기존 수동 기록 보호 ${protectedCount}건 · 출처 불명 이전 기록(검토 필요) ${ambiguousCount}건\n최근 ${verified}건 서버 대조 · 총 ${unique.length}건 처리\n\n서버 읽기 상태는 화면 상단 Firebase 줄에서 확인해 주세요.\n확인 시각: ${localTimeValue()}`);
+    noteSyncStatus(`Apple 메모 반영 완료\n신규 ${added}건 · 수정 ${updated}건 · 변경 없음 ${unchanged}건 · 기존과 동일한 수동 기록 보호 ${protectedCount}건 · 출처 불명 이전 기록(검토 필요) ${ambiguousCount}건\n최근 ${verified}건 서버 대조 · 총 ${unique.length}건 처리\n\n서버 읽기 상태는 화면 상단 Firebase 줄에서 확인해 주세요.\n확인 시각: ${localTimeValue()}`);
   }catch(e){
     const message=String(e?.message||e);
     const errText=cloudErrorText(e);
@@ -2865,7 +3000,7 @@ function captureAppleNoteSyncLink(){
   }catch(e){noteSyncPendingText="";show("notesync");noteSyncStatus("메모를 읽을 수 없습니다: "+(e?.message||e));}
 }
 
-Object.assign(window,{copyFixedNotePickerUrl,syncPickedAppleNoteFromClipboard,showNoteSyncManualInput,syncPastedAppleNote,saveNoteSyncSettings,copyNoteSyncPrefix,displayNoteSyncSettings,importPendingAppleNote,clearNoteSyncLink,goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,careLogParserFixSelfTest,outputEquationSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe,appHealthCheck,solUpgradeSelfTest});
+Object.assign(window,{previewHistoricalOutputRepairs,applyHistoricalOutputRepairs,outputHistoricalRepairSelfTest,copyFixedNotePickerUrl,syncPickedAppleNoteFromClipboard,showNoteSyncManualInput,syncPastedAppleNote,saveNoteSyncSettings,copyNoteSyncPrefix,displayNoteSyncSettings,importPendingAppleNote,clearNoteSyncLink,goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,careLogParserFixSelfTest,outputEquationSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe,appHealthCheck,solUpgradeSelfTest});
 captureAppleNoteSyncLink();
 captureSelectedNoteLink();
 // Shortcuts may reopen an existing Safari tab without reloading the document.
