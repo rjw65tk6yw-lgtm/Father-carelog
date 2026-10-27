@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 V44.21 · 동기화 확인</title>
+<title>아버지 케어로그 V44.22 · 대소변 계산식 수정</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -364,7 +364,7 @@ h1,h2,h3{color:#f8fafc!important}
 </style>
 </head>
 <body>
-<header><h1>아버지 케어로그 V44.21 · 동기화 오류 확인</h1><div id="roomStatus" class="small">입장 전</div><div id="cloudStatus" class="small" role="status" aria-live="polite">Firebase: 입장 또는 메모 동기화 후 연결 확인</div></header>
+<header><h1>아버지 케어로그 V44.22 · 대소변 계산식 수정</h1><div id="roomStatus" class="small">입장 전</div><div id="cloudStatus" class="small" role="status" aria-live="polite">Firebase: 입장 또는 메모 동기화 후 연결 확인</div></header>
 <main>
 <div class="tabs">
 <button onclick="show('join')">입장</button>
@@ -966,11 +966,75 @@ function saltWaterSelfTest(){
   };
 }
 
+// 대소변의 계량식은 좌변의 첫 수치가 아닌 등호 우변의 최종값을 저장한다.
+// 한 시간행에 소변과 대변이 함께 있어도 각 항목의 식만 검사한다.
+function outputAmountFromEquation(s,kind){
+  const text=String(s||"");
+  const label=kind==="urine"? /소변/g : /대변|(?:^|[^가-힣])변(?=\s|[:：=]|\d)/g;
+  for(const m of text.matchAll(label)){
+    const start=m.index+m[0].length;
+    let fragment=text.slice(start);
+    // 다른 기록 항목이나 별도 구절의 숫자를 빌려오지 않는다.
+    const separators=[
+      fragment.search(/[\n，;；]|,(?!\d{3}(?:\D|$))/),
+      fragment.search(/(?:소변|대변|(?:^|\s)변(?=\s|[:：=]|\d))/),
+      fragment.search(/(?:^|[\s,，])(?:혈압|BP|혈당|BST|SpO2|SpO₂|산소포화도|심박수|HR|체온|체중|경관식|식사|물\s*\d)/i),
+      fragment.search(/\s*[\/|]\s*(?=(?:소변|대변)(?:\s|$|[:：]))/)
+    ].filter(i=>i>=0);
+    if(separators.length)fragment=fragment.slice(0,Math.min(...separators));
+    fragment=fragment.slice(0,160).trim();
+    if(!fragment || /^(?:없음|없다|미측정|미기록|확인\s*불가)/.test(fragment))continue;
+    // 수량/기저귀 계량식: '소변 430g - 160g = 270g' -> 270g.
+    // '='가 있는 불완전한 계산식에서는 좌변을 대신 저장하지 않는다.
+    const eq=fragment.indexOf('=');
+    if(eq>=0){
+      const lhs=fragment.slice(0,eq);
+      const rhs=fragment.slice(eq+1);
+      // 등호 앞에 실제 숫자가 있어야 하며, 등호 뒤 결과는 단일 수치여야 한다.
+      // '소변량=120g'처럼 라벨 뒤의 대입 표현도 허용한다.
+      const lhsHasNumber=/\d/.test(lhs);
+      const lhsBare=!lhsHasNumber && /^(?:량|총량|양|결과|합계)?\s*$/.test(lhs);
+      if(!lhsHasNumber && !lhsBare)continue;
+      const value=rhs.match(/^\s*(?:약|실제|최종|결과|합계)?\s*[:：]?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d.,])\s*(?:g|그램|mL|ml|cc)?\s*(?=$|[\s)）.。]|\(|[가-힣])/i);
+      if(!value)continue;
+      const suffix=rhs.slice(value[0].length).trimStart();
+      // 우변도 연산식이면 첫 숫자를 결과로 잘못 인식하지 않도록 보류한다.
+      if(/^[+\-*/×÷]/.test(suffix))continue;
+      const total=Number(value[1].replace(/,/g,""));
+      if(Number.isFinite(total) && total>=0)return total;
+      continue;
+    }
+    // 계산식이 없는 기존 '소변 230g, 대변 144g' 등의 기록은 그대로 지원.
+    // 회수·시각 숫자가 앞에 있어도 g/mL 단위를 가진 측정치를 먼저 찾는다.
+    const measured=fragment.match(/(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?:g|그램|mL|ml|cc)(?=$|[^a-zA-Z\d])/i);
+    const bare=fragment.match(/^(?:량|총량|양|이|가|은|는)?\s*[:：]?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?![\d.,])/);
+    const picked=measured||bare;
+    if(picked){const n=Number(picked[1].replace(/,/g,""));if(Number.isFinite(n)&&n>=0)return n;}
+  }
+  return null;
+}
+function outputEquationSelfTest(){
+  const cases=[
+    ["ㅇ08:30 소변 430-160=270g",270,null],
+    ["ㅇ08:30 대변 350g-120g=230g",null,230],
+    ["ㅇ08:30 소변 500g-200g=300g, 대변 260-90=170g",300,170],
+    ["ㅇ08:30 대변 90g, 소변 150g",150,90],
+    ["ㅇ08:30 소변 1,010g 대변 144g",1010,144],
+    ["ㅇ08:30 소변 100+70=170mL",170,null],
+    ["ㅇ08:30 대변 (480-200)=280g",null,280],
+    ["ㅇ08:30 대변량=200g",null,200],
+    ["ㅇ08:30 소변 200g 혈압=120/80",200,null],
+    ["ㅇ08:30 소변 없음, 대변 50g",null,50],
+    ["ㅇ08:30 소변 500=300+200g",null,null],
+    ["ㅇ08:30 소변 350g-100g=250g / 대변 200g-50g=150g",250,150]
+  ];
+  const results=cases.map(([text,urine,stool])=>{const r=parseLine(text,"2026-10-28");return {text,expected:[urine,stool],actual:[r.urine,r.stool],ok:r.urine===urine&&r.stool===stool};});
+  return {ok:results.every(r=>r.ok),results};
+}
 function parseLine(text,date){
   const s=cleanEvent(text), t=eventTime(s)||nowInput().slice(11,16);
-  const urine=firstNum(/소변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
-  let stool=firstNum(/대변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
-  if(stool===null)stool=firstNum(/(?:^|[^소대])변[^\d]{0,16}(\d+(?:[.,]\d+)?)/,s);
+  const urine=outputAmountFromEquation(s,"urine");
+  const stool=outputAmountFromEquation(s,"stool");
   let position=""; if(/좌측위/.test(s))position="좌측위";else if(/우측위/.test(s))position="우측위";else if(/정상위|앙와위/.test(s))position="정상위/앙와위";
   const actualMeal=isActualMealLine(s), actualWater=isActualWaterLine(s), actualOutput=isActualOutputLine(s);
   const r={dt:`${date}T${t}`,type:inferType(s),spo2:firstNum(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})/i,s),hr:firstNum(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i,s),temp:firstNum(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i,s),glucose:firstNum(/(?:혈당(?:치)?|glucose|BST)\s*[:=]?\s*(\d{1,4}(?:[.,]\d+)?)/i,s),oxygen:firstNum(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i,s),weight:weightFrom(s),sbp:null,dbp:null,feed:actualMeal?actualMealAmount(s):null,water:actualWater?firstNum(/(?:물|수분)[^\d]{0,16}(?:약\s*)?(\d+(?:[.,]\d+)?)/,s):null,residual:firstNum(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,12}(\d+(?:[.,]\d+)?)/i,s),urine:actualOutput?urine:null,stool:actualOutput?stool:null,hob:firstNum(/HOB\s*[:=]?\s*(\d{1,2})/i,s),position,positionDetail:"",breath:breathStatus(s),memo:s,authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
@@ -2801,7 +2865,7 @@ function captureAppleNoteSyncLink(){
   }catch(e){noteSyncPendingText="";show("notesync");noteSyncStatus("메모를 읽을 수 없습니다: "+(e?.message||e));}
 }
 
-Object.assign(window,{copyFixedNotePickerUrl,syncPickedAppleNoteFromClipboard,showNoteSyncManualInput,syncPastedAppleNote,saveNoteSyncSettings,copyNoteSyncPrefix,displayNoteSyncSettings,importPendingAppleNote,clearNoteSyncLink,goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,careLogParserFixSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe,appHealthCheck,solUpgradeSelfTest});
+Object.assign(window,{copyFixedNotePickerUrl,syncPickedAppleNoteFromClipboard,showNoteSyncManualInput,syncPastedAppleNote,saveNoteSyncSettings,copyNoteSyncPrefix,displayNoteSyncSettings,importPendingAppleNote,clearNoteSyncLink,goPasteInput,show,joinFamily,saveManual,clearInput,editRecord,cancelEdit,previewPaste,savePaste,deleteRecord,buildGptPrompt,copyGptPrompt,copyAndOpenChatGPT,shareGptPrompt,loadGptInFile,clearGptIn,previewGptIn,saveGptIn,gptInTextChanged,copyTodaySummary,downloadTodaySummaryCsv,saveTodaySummaryByDate,downloadEditableCsv,applyCsv,downloadDailySummaryCsv,saveAllDailySummaries,collapseSameTimeMeals,getEditingId,setEditingId,saltWaterSelfTest,careLogParserFixSelfTest,outputEquationSelfTest,isActualWaterLine,saltFormulaContext,groupRowsByDate,groupedPreviewText,savePastedDailySummaries,dateGroupSelfTest,dedupeRows,duplicateKeyOfRow,dedupeSelfTest,toggleFolder,openRecentRecordFolders,closeAllRecordFolders,openAllRecordFolders,recordFolderSelfTest,fileDateFixSelfTest,isLooseRecordLine,detectDateWarnings,dateCountTableHtml,safetyPreviewSelfTest,syncImportYearBox,importBaseYear,yearImportSelfTest,detectYearWarnings,linkTabYearSelfTest,uploadMediaFiles,mediaHtml,clearMediaInput,mediaUploadSelfTest,deleteMediaAttachment,mediaDeleteSelfTest,normalizeCareLogTextForParser,fileImportStrongSelfTest,getImportText,parseImportRows,saveImportRows,logicSimpleSelfTest,checkBulkDuplicates,removeBulkDuplicates,bulkDedupeSelfTest,findBulkDuplicates,renderBulkDuplicateReview,selectAllDuplicateCandidates,deleteSelectedBulkDuplicates,selectiveDedupeSelfTest,groupedBulkDuplicates,bulkDuplicateRuleText,structuredDedupeSignature,isLongMemoForLooseDedupe,appHealthCheck,solUpgradeSelfTest});
 captureAppleNoteSyncLink();
 captureSelectedNoteLink();
 // Shortcuts may reopen an existing Safari tab without reloading the document.
