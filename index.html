@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>아버지 케어로그 V44.23 · 기록 저장·과거 계산식 정정</title>
+<title>아버지 케어로그 V44.23 · 기록 저장·과거 계산식 정정 · 산소케뉼라 인식</title>
 <style>
 :root{--bg:#f7f7f8;--card:#fff;--line:#d9dde3;--text:#111827;--muted:#6b7280;--primary:#2563eb;--danger:#7f1d1d}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
@@ -1137,13 +1137,56 @@ function outputHistoricalRepairSelfTest(){
   ];
   return samples.map(([r,expected])=>{const p=outputRepairPatch(r)?.patch||{};const actual=Array.isArray(expected)?[p.urine,p.stool]:(p.stool??p.urine??null);return {expected,actual,ok:JSON.stringify(actual)===JSON.stringify(expected)};});
 }
+/** Read an explicitly recorded cannula/oxygen flow; never infer from SpO2. */
+function oxygenFromText(text) {
+    const labels = /(?:산소\s*(?:케뉼라|캐뉼라|카뉼라|캔눌라|유량|사용량)?|(?:비강\s*)?(?:케뉼라|캐뉼라|카뉼라|캔눌라)|\b(?:nasal\s+cannula|cannula|oxygen(?:\s*flow)?|O[₂2])(?![a-zA-Z0-9]))\s*[:：=]?\s*/giu;
+    const numeric = '[+-]?(?:\\d+(?:[.,]\\d+)?|[.,]\\d+)';
+    const unit = '(?:[lℓ](?:\\s*(?:/\\s*(?:min(?:ute)?s?|분)|p\\s*m))?|리터\\s*/\\s*분)(?![a-zA-Z0-9]|\\s*/)';
+    const amount = new RegExp(`^(${numeric})\\s*${unit}`, 'i');
+    const range = new RegExp(`^${numeric}\\s*(?:~|～|–|—|->|→|⇒|-)\\s*${numeric}\\s*${unit}`, 'i');
+    const change = new RegExp(`^\\s*(?:~|～|–|—|->|→|⇒|-|에서)\\s*${numeric}`, 'i');
+    const values = [];
+    let reason = null;
+    for (const match of text.matchAll(labels)) {
+        const offset = match.index + match[0].length, tail = text.slice(offset, offset + 180).split(/[\n;]/, 1)[0];
+        const found = amount.exec(tail);
+        if (!found) {
+            if (range.test(tail))
+                reason = '유량 범위·변경값이 함께 있어 한 값으로 확정하지 않았어요.';
+            continue;
+        }
+        const start = text.lastIndexOf('\n', match.index) + 1, context = text.slice(start, offset) + tail;
+        if (/목표|예정|계획|권고|필요\s*시|필요하면|가정|예시|미사용|사용\s*안/.test(context)) {
+            reason = '예정·조건부 사용 등 실제 적용 여부를 확인해 주세요.';
+            continue;
+        }
+        const value = Number(found[1].replace(',', '.'));
+        if (!Number.isFinite(value) || value < 0) {
+            reason = '유량 숫자와 단위를 확인해 주세요.';
+            continue;
+        }
+        if (change.test(tail.slice(found[0].length))) {
+            reason = '유량 범위·변경값이 함께 있어 한 값으로 확정하지 않았어요.';
+            continue;
+        }
+        values.push(value);
+    }
+    const unique = [...new Set(values)];
+    if (unique.length > 1)
+        reason = '한 기록에 서로 다른 산소 유량이 있어 원문 확인이 필요해요.';
+    return { value: reason || unique.length !== 1 ? null : unique[0], reason };
+}
+
+function oxygenForExport(r){
+  return r.oxygen!==null&&r.oxygen!==undefined&&r.oxygen!==""?r.oxygen:oxygenFromText(String(r.memo||"")).value;
+}
 function parseLine(text,date){
   const s=cleanEvent(text), t=eventTime(s)||nowInput().slice(11,16);
   const urine=outputAmountFromEquation(s,"urine");
   const stool=outputAmountFromEquation(s,"stool");
   let position=""; if(/좌측위/.test(s))position="좌측위";else if(/우측위/.test(s))position="우측위";else if(/정상위|앙와위/.test(s))position="정상위/앙와위";
   const actualMeal=isActualMealLine(s), actualWater=isActualWaterLine(s), actualOutput=isActualOutputLine(s);
-  const r={dt:`${date}T${t}`,type:inferType(s),spo2:firstNum(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})/i,s),hr:firstNum(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i,s),temp:firstNum(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i,s),glucose:firstNum(/(?:혈당(?:치)?|glucose|BST)\s*[:=]?\s*(\d{1,4}(?:[.,]\d+)?)/i,s),oxygen:firstNum(/(?:O₂|O2|산소)\s*[:=]?\s*(\d+(?:[.,]\d)?)\s*L/i,s),weight:weightFrom(s),sbp:null,dbp:null,feed:actualMeal?actualMealAmount(s):null,water:actualWater?firstNum(/(?:물|수분)[^\d]{0,16}(?:약\s*)?(\d+(?:[.,]\d+)?)/,s):null,residual:firstNum(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,12}(\d+(?:[.,]\d+)?)/i,s),urine:actualOutput?urine:null,stool:actualOutput?stool:null,hob:firstNum(/HOB\s*[:=]?\s*(\d{1,2})/i,s),position,positionDetail:"",breath:breathStatus(s),memo:s,authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
+  const r={dt:`${date}T${t}`,type:inferType(s),spo2:firstNum(/(?:SpO₂|SpO2|spo2|산소포화도)\s*[:=]?\s*(\d{2,3})/i,s),hr:firstNum(/(?:HR|심박수|맥박)\s*[:=]?\s*(\d{2,3})/i,s),temp:firstNum(/(?:체온|T)\s*[:=]?\s*(\d{2}(?:[.,]\d)?)/i,s),glucose:firstNum(/(?:혈당(?:치)?|glucose|BST)\s*[:=]?\s*(\d{1,4}(?:[.,]\d+)?)/i,s),oxygen:oxygenFromText(s).value,weight:weightFrom(s),sbp:null,dbp:null,feed:actualMeal?actualMealAmount(s):null,water:actualWater?firstNum(/(?:물|수분)[^\d]{0,16}(?:약\s*)?(\d+(?:[.,]\d+)?)/,s):null,residual:firstNum(/(?:잔류|위잔류|리거즈|residual)[^\d]{0,12}(\d+(?:[.,]\d+)?)/i,s),urine:actualOutput?urine:null,stool:actualOutput?stool:null,hob:firstNum(/HOB\s*[:=]?\s*(\d{1,2})/i,s),position,positionDetail:"",breath:breathStatus(s),memo:s,authorName:currentAuthor||"가족",familyCode:currentCode,updatedAt:serverTimestamp()};
   // Require an explicit BP/혈압 label. A date such as 10/16 is never a BP.
   // Range checks additionally reject mistaken dates and implausible pairs.
   const bp=s.match(/(?:^|[^가-힣a-zA-Z])(?:BP|혈압)\s*[:：=]?\s*(\d{2,3})\s*\/\s*(\d{2,3})(?!\d)/i);
@@ -1935,7 +1978,7 @@ async function copyTodaySummary(){await navigator.clipboard.writeText(summaryObj
 function csvEsc(v){const s=String(v??"");return /[",\n\r]/.test(s)?`"${s.replace(/"/g,'""')}"`:s}
 function download(name,text){const a=document.createElement("a"),blob=new Blob([text],{type:"text/csv;charset=utf-8"});a.href=URL.createObjectURL(blob);a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
 const csvHeaders=["id","날짜시간","기록종류","SpO2","HR","체온","혈당","산소","체중","혈압수축","혈압이완","식사","물","잔류","소변","대변","HOB","체위","체위상세","호흡","메모"];
-function rowToCsv(r){return [r.id||recordId(r),r.dt||"",r.type||"",r.spo2??"",r.hr??"",r.temp??"",r.glucose??"",r.oxygen??"",r.weight??"",r.sbp??"",r.dbp??"",r.feed??"",r.water??"",r.residual??"",r.urine??"",r.stool??"",r.hob??"",r.position||"",r.positionDetail||"",r.breath||"",stripKey(r.memo||"")]}
+function rowToCsv(r){return [r.id||recordId(r),r.dt||"",r.type||"",r.spo2??"",r.hr??"",r.temp??"",r.glucose??"",oxygenForExport(r)??"",r.weight??"",r.sbp??"",r.dbp??"",r.feed??"",r.water??"",r.residual??"",r.urine??"",r.stool??"",r.hob??"",r.position||"",r.positionDetail||"",r.breath||"",stripKey(r.memo||"")]}
 function downloadEditableCsv(){if(!allRows.length){alert("내보낼 기록이 없습니다.");return;}download(`아버지_케어로그_수정용_${localDate()}.csv`,"\ufeff"+[csvHeaders,...allRows.map(rowToCsv)].map(r=>r.map(csvEsc).join(",")).join("\n"))}
 function parseCsv(text){const rows=[];let row=[],f="",q=false;text=String(text||"");for(let i=0;i<text.length;i++){const c=text[i],n=text[i+1];if(q){if(c=='"'&&n=='"'){f+='"';i++}else if(c=='"')q=false;else f+=c}else{if(c=='"')q=true;else if(c==","){row.push(f);f=""}else if(c=="\n"){row.push(f);rows.push(row);row=[];f=""}else if(c!="\r")f+=c}}row.push(f);rows.push(row);return rows.filter(r=>r.some(x=>String(x).trim()))}
 function csvNum(v){const s=String(v??"").trim();if(!s)return null;const n=Number(s.replace(",","."));return Number.isFinite(n)?n:null}
@@ -3009,3 +3052,4 @@ window.addEventListener("pageshow",captureSelectedNoteLink);
 </script>
 </body>
 </html>
+
